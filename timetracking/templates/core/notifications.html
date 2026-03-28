@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row align-items-center mb-5 mt-3">
+    <div class="col">
+        <h2 class="fw-bold mb-0">Notifications</h2>
+        <p class="text-muted mb-0">Stay informed about your organization activities.</p>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-md-10 offset-md-1">
+        <div class="card p-5 border-0 shadow-lg rounded-5 bg-white">
+            <h5 class="fw-bold mb-4"> <i class="fas fa-bell text-primary me-2"></i> All Alerts</h5>
+            <div class="list-group list-group-flush border-0">
+                {% for notif in notifications %}
+                <div role="button" tabindex="0" class="list-group-item bg-transparent py-4 border-0 d-flex align-items-start mb-3 rounded-4 shadow-sm notification-item {% if not notif.is_read %}bg-light border-start border-4 border-primary{% endif %}"
+                     data-redirect="{% if notif.redirect_url %}{{ notif.redirect_url }}{% else %}{% url 'tasks' %}{% endif %}">
+                    <div class="icon-box bg-light text-primary me-3 flex-shrink-0"> <i class="fas fa-info-circle"></i> </div>
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between mb-1">
+                            <h6 class="fw-bold mb-0 {% if not notif.is_read %}text-primary{% endif %}">{{ notif.message }}</h6>
+                            <small class="text-muted">{{ notif.created_at|timesince }} ago</small>
+                        </div>
+                        <p class="text-muted small mb-0">System alert for your account security and activity log.</p>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="text-center py-5 text-muted">No notifications found</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+.env
+timetracking/.env
+*.pyc
+__pycache__/
+venv/
+timetracking/media/
+timetracking/staticfiles/
+*.sqlite3
+.DS_Store
+.idea/
+.vscode/
+*.pdf
+timetracking/out.txt

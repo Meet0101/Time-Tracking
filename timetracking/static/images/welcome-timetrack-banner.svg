@@ -1,0 +1,47 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="55%" stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#0ea5a4"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.98"/>
+      <stop offset="100%" stop-color="#e2e8f0" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1050" cy="90" r="160" fill="#818cf8" fill-opacity="0.20"/>
+  <circle cx="150" cy="520" r="220" fill="#22d3ee" fill-opacity="0.16"/>
+  <rect x="120" y="110" rx="30" ry="30" width="960" height="410" fill="url(#card)"/>
+  <text x="180" y="210" fill="#312e81" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="700">
+    Welcome to TimeTrack
+  </text>
+  <text x="180" y="255" fill="#475569" font-family="Arial, Helvetica, sans-serif" font-size="24">
+    Plan projects. Track tasks. Own your time.
+  </text>
+  <rect x="180" y="300" width="240" height="140" rx="18" fill="#eef2ff"/>
+  <rect x="450" y="300" width="240" height="140" rx="18" fill="#e0f2fe"/>
+  <rect x="720" y="300" width="240" height="140" rx="18" fill="#dcfce7"/>
+  <text x="205" y="350" fill="#4338ca" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">
+    Project Board
+  </text>
+  <text x="205" y="385" fill="#475569" font-family="Arial, Helvetica, sans-serif" font-size="16">
+    Organize all work
+  </text>
+  <text x="475" y="350" fill="#0f766e" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">
+    Smart Timer
+  </text>
+  <text x="475" y="385" fill="#475569" font-family="Arial, Helvetica, sans-serif" font-size="16">
+    Capture every hour
+  </text>
+  <text x="745" y="350" fill="#166534" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">
+    Reports
+  </text>
+  <text x="745" y="385" fill="#475569" font-family="Arial, Helvetica, sans-serif" font-size="16">
+    Measure productivity
+  </text>
+  <text x="180" y="480" fill="#64748b" font-family="Arial, Helvetica, sans-serif" font-size="18">
+    Thank you for registering with TimeTrack app.
+  </text>
+</svg>

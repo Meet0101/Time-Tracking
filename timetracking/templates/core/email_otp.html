@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTP — TimeTrack</title>
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <div style="max-width:600px;margin:0 auto;padding:28px;">
+        <div style="background:#ffffff;border-radius:16px;padding:26px;box-shadow:0 10px 30px rgba(2,6,23,0.06);">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                <div style="width:42px;height:42px;border-radius:14px;background:#eef2ff;display:flex;align-items:center;justify-content:center;">
+                    <span style="font-size:20px;">⏱️</span>
+                </div>
+                <div>
+                    <div style="font-size:18px;font-weight:800;letter-spacing:-0.2px;">TimeTrack</div>
+                    <div style="color:#64748b;font-size:13px;">Email Verification</div>
+                </div>
+            </div>
+
+            <h2 style="margin:18px 0 8px;font-size:20px;">Verify your email to continue</h2>
+            <p style="margin:0 0 18px;color:#475569;font-size:14px;line-height:1.6;">
+                Use the 6-digit OTP below. This OTP will expire in <b>{{ expires_minutes }} minutes</b>.
+            </p>
+
+            <div style="display:flex;justify-content:center;align-items:center;margin:22px 0;">
+                <div style="font-size:32px;font-weight:900;letter-spacing:4px;color:#4f46e5;background:#eef2ff;border-radius:14px;padding:18px 26px;">
+                    {{ otp }}
+                </div>
+            </div>
+
+            <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px;color:#64748b;font-size:12px;line-height:1.6;">
+                If you didn’t request this OTP, you can safely ignore this email.
+            </div>
+
+            <div style="margin-top:12px;color:#64748b;font-size:12px;">
+                Account: <b>{{ email }}</b>
+            </div>
+        </div>
+
+        <div style="text-align:center;margin-top:18px;color:#94a3b8;font-size:12px;">
+            TimeTrack — internship demo app.
+        </div>
+    </div>
+</body>
+</html>
+

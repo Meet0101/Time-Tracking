@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'core/includes/top_banner.html' with title='Profile & Settings' subtitle='Account details and recent activity.' badge_1=request.user.role|title badge_2='Account' %}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card p-4 rounded-5 h-100">
+            <h5 class="section-card-title"><i class="fas fa-id-card text-primary"></i> Account Details</h5>
+            <div class="d-flex align-items-center gap-3 mb-4">
+                {% if request.user.avatar %}
+                    <img src="{{ request.user.avatar.url }}" class="rounded-circle shadow-sm object-fit-cover" width="56" height="56" alt="avatar">
+                {% else %}
+                    <img src="https://ui-avatars.com/api/?name={{ request.user.email }}&background=random" class="rounded-circle shadow-sm" width="56" alt="avatar">
+                {% endif %}
+                <div>
+                    <div class="fw-bold">{{ request.user.email }}</div>
+                    <small class="text-muted">Role: {{ request.user.role|title }}</small>
+                </div>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Profile Photo</label>
+                    <input type="file" name="avatar" class="form-control" accept="image/*">
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" value="1" id="removeAvatar" name="remove_avatar">
+                        <label class="form-check-label small text-muted" for="removeAvatar">Remove current photo</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Full Name</label>
+                    <input type="text" name="full_name" class="form-control" value="{{ request.user.get_full_name }}" placeholder="Enter full name">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Email</label>
+                    <input type="email" class="form-control" value="{{ request.user.email }}" disabled>
+                </div>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">
+                    <i class="fas fa-save me-2"></i> Save Changes
+                </button>
+            </form>
+            <div class="d-flex gap-2 mt-4">
+                <a href="{% url 'profile_activity_export_csv' %}" class="btn btn-outline-primary rounded-pill btn-sm">
+                    <i class="fas fa-file-csv me-1"></i> Export CSV
+                </a>
+                <a href="{% url 'profile_activity_export_pdf' %}" class="btn btn-outline-primary rounded-pill btn-sm" target="_blank">
+                    <i class="fas fa-file-pdf me-1"></i> Export PDF
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card p-4 rounded-5 h-100">
+            <h5 class="section-card-title"><i class="fas fa-timeline text-primary"></i> Recent Activity Timeline</h5>
+            <div class="list-group list-group-flush">
+                {% for item in timeline %}
+                    <div class="list-group-item bg-transparent border-0 px-0 py-3 border-bottom">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div>
+                                <div class="fw-semibold">
+                                    {% if item.kind == 'log' %}
+                                        <i class="fas fa-clock text-info me-2"></i>
+                                    {% else %}
+                                        <i class="fas fa-bell text-warning me-2"></i>
+                                    {% endif %}
+                                    {{ item.title }}
+                                </div>
+                                <div class="text-muted small mt-1">{{ item.meta }}</div>
+                            </div>
+                            <small class="text-muted">{{ item.when|date:"M d, H:i" }}</small>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="text-center py-5 text-muted">No activity found yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

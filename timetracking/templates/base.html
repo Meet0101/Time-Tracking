@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="color-scheme" content="light dark">
+    <title>TimeTrack | Dashboard</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Custom Style (cache-bust) -->
+    <link rel="stylesheet" href="/static/css/style.css?v=8">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="app-body">
+
+    <div class="d-flex" id="wrapper">
+        <!-- Sidebar -->
+        <div class="bg-dark text-white border-end" id="sidebar-wrapper">
+            <div class="sidebar-heading p-4 text-center">
+                <h4 class="fw-bold mb-0"><i class="fas fa-clock text-primary me-2"></i>TimeTrack</h4>
+                <small class="text-muted">Time tracking</small>
+                <div class="mt-2">
+                    <span class="brand-chip"><i class="fas fa-graduation-cap"></i> Internship project</span>
+                </div>
+                <div class="mt-2">
+                    <span class="brand-chip"><i class="fas fa-user-tag"></i> {{ request.user.role|title }}</span>
+                </div>
+            </div>
+            <div class="sidebar-nav">
+                <div class="list-group list-group-flush px-3 sidebar-nav-scroll">
+                    <a href="{% url 'dashboard' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'dashboard' %}active-link{% endif %}">
+                        <i class="fas fa-tachometer-alt me-3"></i>Dashboard
+                    </a>
+                    <a href="{% url 'projects' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'projects' or request.resolver_match.url_name == 'project_detail' %}active-link{% endif %}">
+                        <i class="fas fa-briefcase me-3"></i>Projects
+                    </a>
+                    <a href="{% url 'tasks' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'tasks' %}active-link{% endif %}">
+                        <i class="fas fa-tasks me-3"></i>Task Board
+                    </a>
+                    <a href="{% url 'tracking' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'tracking' %}active-link{% endif %}">
+                        <i class="fas fa-play-circle me-3"></i>Time Tracker
+                    </a>
+                    <a href="{% url 'reports' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'reports' %}active-link{% endif %}">
+                        <i class="fas fa-chart-line me-3"></i>Reports
+                    </a>
+                    {% if request.user.role == 'admin' or request.user.role == 'manager' %}
+                    <a href="{% url 'data_health' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'data_health' %}active-link{% endif %}">
+                        <i class="fas fa-heart-pulse me-3"></i>Data QA
+                    </a>
+                    {% endif %}
+                    <a href="{% url 'enhancements' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'enhancements' %}active-link{% endif %}">
+                        <i class="fas fa-rocket me-3"></i>Enhancements
+                    </a>
+                    {% if request.user.role == 'admin' or request.user.role == 'manager' %}
+                        <a href="{% url 'billing' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'billing' %}active-link{% endif %}">
+                            <i class="fas fa-file-invoice-dollar me-3"></i>Billing
+                        </a>
+                    {% endif %}
+                </div>
+                <div class="list-group list-group-flush px-3 sidebar-footer">
+                    <a href="{% url 'profile_settings' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'profile_settings' %}active-link{% endif %}">
+                        <i class="fas fa-user-cog me-3"></i>Profile &amp; Settings
+                    </a>
+                    <a href="{% url 'logout' %}" class="list-group-item list-group-item-action bg-transparent text-danger py-3 rounded-pill mb-0">
+                        <i class="fas fa-sign-out-alt me-3"></i>Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+        <!-- /#sidebar-wrapper -->
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-expand-lg app-navbar border-0 py-3 px-4">
+                <div class="container-fluid">
+                    <button class="btn btn-primary rounded-circle me-3" id="menu-toggle"><i class="fas fa-bars"></i></button>
+                    
+                    <div class="float-end ms-auto d-flex align-items-center">
+                        <button class="btn btn-light rounded-circle me-3" id="dark-mode-toggle"><i class="fas fa-moon"></i></button>
+                        <div class="dropdown me-4">
+
+                            <a class="text-dark position-relative" href="#" data-bs-toggle="dropdown">
+                                <i class="fas fa-bell fa-lg"></i>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger {% if navbar_unread_count == 0 %}d-none{% endif %}" id="notif-count">
+                                    {{ navbar_unread_count }}
+                                </span>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-3" id="notif-dropdown">
+                                {% for notif in navbar_notifications %}
+                                <li>
+                                    <div
+                                        role="button"
+                                        tabindex="0"
+                                        class="dropdown-item py-2 notification-item {% if not notif.is_read %}fw-bold{% endif %}"
+                                        data-redirect="{% if notif.redirect_url %}{{ notif.redirect_url }}{% else %}{% url 'tasks' %}{% endif %}"
+                                    >
+                                        <div class="small text-wrap">{{ notif.message|truncatechars:85 }}</div>
+                                        <div class="text-muted small">{{ notif.created_at|timesince }} ago</div>
+                                    </div>
+                                </li>
+                                {% empty %}
+                                <li class="text-center text-muted py-2">No new notifications</li>
+                                {% endfor %}
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-center fw-semibold" href="{% url 'notifications' %}">View all notifications</a></li>
+                            </ul>
+                        </div>
+                        
+                        <div class="dropdown">
+                            <button class="btn btn-light rounded-pill dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown">
+                                {% if request.user.avatar %}
+                                    <img src="{{ request.user.avatar.url }}" class="rounded-circle me-2 object-fit-cover" width="30" height="30" alt="avatar">
+                                {% else %}
+                                    <img src="https://ui-avatars.com/api/?name={{ request.user.email }}&background=random" class="rounded-circle me-2" width="30" alt="avatar">
+                                {% endif %}
+                                {{ request.user.email|truncatechars:15 }}
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                                <li><a class="dropdown-item" href="{% url 'profile_settings' %}">Profile & Settings</a></li>
+                                <li><a class="dropdown-item" href="{% url 'notifications' %}">Notifications</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="{% url 'logout' %}">Logout</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="container-fluid p-4 app-content-shell">
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show shadow-sm border-0 rounded-4" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+        <!-- /#page-content-wrapper -->
+    </div>
+    <div id="sidebar-overlay"></div>
+
+    <!-- Hidden CSRF for fetch / AJAX -->
+    <form id="csrf-hidden-form" method="post" style="display:none;">
+        {% csrf_token %}
+    </form>
+    <div id="global-toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/main.js?v=5"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

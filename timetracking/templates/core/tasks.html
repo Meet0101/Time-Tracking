@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+{% load django_bootstrap5 %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <h2 class="page-hero-title">Task Board</h2>
+        <p class="page-hero-subtitle">
+            {% if can_assign %}
+            Assign work to developers, prioritize, and update execution status in real time.
+            {% else %}
+            Plan, prioritize, and update your assigned work quickly with a clean Kanban workflow.
+            {% endif %}
+        </p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <div class="hero-badges d-none d-md-flex">
+            <span class="hero-badge"><i class="fas fa-grip"></i> Drag & Drop</span>
+            <span class="hero-badge"><i class="fas fa-filter"></i> Clear Status</span>
+        </div>
+        <button class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+            <i class="fas fa-plus me-2"></i> Add Task
+        </button>
+    </div>
+</div>
+{% if selected_project_id %}
+<div class="alert alert-info border-0 rounded-4 shadow-sm">
+    Filtered by project.
+    <a href="{% url 'tasks' %}" class="fw-bold text-decoration-none ms-2">Clear filter</a>
+</div>
+{% endif %}
+{% if selected_status %}
+<div class="alert alert-info border-0 rounded-4 shadow-sm">
+    Filtered by status: <span class="fw-bold">{{ selected_status|title }}</span>
+    <a href="{% url 'tasks' %}" class="fw-bold text-decoration-none ms-2">Clear filter</a>
+</div>
+{% endif %}
+
+{% if not todo and not in_progress and not done %}
+<div class="card border-0 shadow-sm rounded-5 p-5 text-center mb-4">
+    <img src="/static/images/empty-tasks.svg" alt="No tasks yet" style="max-width: 360px;" class="mx-auto mb-3">
+    <h4 class="fw-bold mb-2">No tasks yet</h4>
+    <p class="text-muted mb-4">Your board is empty. Create your first task to get started.</p>
+    <div>
+        <button class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+            <i class="fas fa-plus me-2"></i> Create First Task
+        </button>
+    </div>
+</div>
+{% endif %}
+
+<div class="row kanban-board gx-3">
+    <!-- To Do -->
+    <div class="col-md-4 kanban-column" data-status="todo">
+        <div class="p-3 mb-4 d-flex align-items-center justify-content-between">
+            <h6 class="fw-bold text-uppercase mb-0 text-muted small"><i class="fas fa-circle text-secondary me-2"></i> To Do <span class="badge bg-light text-dark ms-2 rounded-pill">{{ todo.count }}</span></h6>
+            <button class="btn btn-light btn-sm rounded-circle shadow-sm fw-bold"><i class="fas fa-ellipsis-h text-muted"></i></button>
+        </div>
+        <div class="kanban-items">
+            {% for task in todo %}
+            <div class="kanban-card p-4 rounded-4 shadow-sm bg-white mb-3"
+                 draggable="true"
+                 data-id="{{ task.id }}"
+                 data-status="{{ task.status }}"
+                 data-title="{{ task.title }}"
+                 data-priority="{{ task.priority }}"
+                 data-deadline="{% if task.deadline %}{{ task.deadline|date:'Y-m-d' }}{% endif %}"
+                 data-project="{{ task.module.project.name }}"
+                 data-project-url="{% url 'project_detail' task.module.project.id %}"
+                 data-desc="{{ task.description|default:''|truncatechars:140 }}">
+                <div class="d-flex justify-content-between mb-3 align-items-center">
+                   <span class="badge {% if task.priority == 'high' %}bg-danger text-white{% elif task.priority == 'medium' %}bg-warning text-dark{% else %}bg-success text-white{% endif %} rounded-pill px-3 py-1 fw-bold text-uppercase small" style="font-size: 0.75rem;">{{ task.priority }}</span>
+                   <div class="text-secondary small fw-bold"> <i class="fas fa-history text-muted"></i> {{ task.created_at|timesince }} ago </div>
+                </div>
+                <h6 class="fw-bold text-dark mb-2">{{ task.title }}</h6>
+                <p class="text-muted small mb-3">{{ task.description|truncatechars:100 }}</p>
+                <div class="d-flex align-items-center justify-content-between">
+                   <div class="text-primary small fw-bold">
+                       <i class="fas fa-layer-group text-muted me-2"></i>
+                       <a href="{% url 'project_detail' task.module.project.id %}" class="text-decoration-none task-project-link">{{ task.module.project.name }}</a>
+                   </div>
+                   <img src="https://ui-avatars.com/api/?name={% if task.assigned_to %}{{ task.assigned_to.email }}{% else %}Unassigned{% endif %}&background=random" class="rounded-circle shadow-sm" width="28">
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- In Progress -->
+    <div class="col-md-4 kanban-column" data-status="in_progress">
+        <div class="p-3 mb-4 d-flex align-items-center justify-content-between">
+            <h6 class="fw-bold text-uppercase mb-0 text-primary small"><i class="fas fa-circle text-primary me-2"></i> In Progress <span class="badge bg-light text-dark ms-2 rounded-pill">{{ in_progress.count }}</span></h6>
+             <button class="btn btn-light btn-sm rounded-circle shadow-sm fw-bold"><i class="fas fa-plus text-primary"></i></button>
+        </div>
+        <div class="kanban-items">
+            {% for task in in_progress %}
+            <div class="kanban-card p-4 rounded-4 shadow-sm bg-white mb-3"
+                 draggable="true"
+                 data-id="{{ task.id }}"
+                 data-status="{{ task.status }}"
+                 data-title="{{ task.title }}"
+                 data-priority="{{ task.priority }}"
+                 data-deadline="{% if task.deadline %}{{ task.deadline|date:'Y-m-d' }}{% endif %}"
+                 data-project="{{ task.module.project.name }}"
+                 data-project-url="{% url 'project_detail' task.module.project.id %}"
+                 data-desc="{{ task.description|default:''|truncatechars:140 }}">
+                <div class="d-flex justify-content-between mb-3 align-items-center">
+                   <span class="badge {% if task.priority == 'high' %}bg-danger text-white{% elif task.priority == 'medium' %}bg-warning text-dark{% else %}bg-success text-white{% endif %} rounded-pill px-3 py-1 fw-bold text-uppercase small" style="font-size: 0.75rem;">{{ task.priority }}</span>
+                </div>
+                <h6 class="fw-bold text-dark mb-2">{{ task.title }}</h6>
+                <p class="text-muted small mb-3">{{ task.description|truncatechars:100 }}</p>
+                <div class="d-flex align-items-center justify-content-between">
+                   <div class="text-primary small fw-bold">
+                       <i class="fas fa-layer-group text-muted me-2"></i>
+                       <a href="{% url 'project_detail' task.module.project.id %}" class="text-decoration-none task-project-link">{{ task.module.project.name }}</a>
+                   </div>
+                   <img src="https://ui-avatars.com/api/?name={% if task.assigned_to %}{{ task.assigned_to.email }}{% else %}Unassigned{% endif %}&background=random" class="rounded-circle" width="28">
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Done -->
+    <div class="col-md-4 kanban-column" data-status="done">
+        <div class="p-3 mb-4 d-flex align-items-center justify-content-between">
+            <h6 class="fw-bold text-uppercase mb-0 text-success small"><i class="fas fa-circle text-success me-2"></i> Done <span class="badge bg-light text-dark ms-2 rounded-pill">{{ done.count }}</span></h6>
+        </div>
+        <div class="kanban-items">
+            {% for task in done %}
+            <div class="kanban-card p-4 rounded-4 shadow-sm bg-white mb-3"
+                 draggable="true"
+                 data-id="{{ task.id }}"
+                 data-status="{{ task.status }}"
+                 data-title="{{ task.title }}"
+                 data-priority="{{ task.priority }}"
+                 data-deadline="{% if task.deadline %}{{ task.deadline|date:'Y-m-d' }}{% endif %}"
+                 data-project="{{ task.module.project.name }}"
+                 data-project-url="{% url 'project_detail' task.module.project.id %}"
+                 data-desc="{{ task.description|default:''|truncatechars:140 }}">
+                <div class="d-flex justify-content-between mb-3 align-items-center">
+                   <span class="badge bg-success text-white rounded-pill px-3 py-1 fw-bold text-uppercase small" style="font-size: 0.75rem;">{{ task.priority }}</span>
+                </div>
+                <h6 class="fw-bold text-dark text-decoration-line-through mb-2 opacity-50">{{ task.title }}</h6>
+                <div class="d-flex align-items-center justify-content-between mt-auto">
+                   <div class="text-muted small fw-bold"> <i class="fas fa-calendar-check me-2"></i> Completed </div>
+                   <img src="https://ui-avatars.com/api/?name={% if task.assigned_to %}{{ task.assigned_to.email }}{% else %}Unassigned{% endif %}&background=random" class="rounded-circle opacity-50" width="28">
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- New Task Modal -->
+<div class="modal fade" id="newTaskModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-5 p-4 border-0 shadow-lg">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold"> <i class="fas fa-plus-circle text-primary me-2"></i> Create New Task</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {% bootstrap_form form %}
+                    <div class="mt-4 text-end">
+                        <button type="submit" class="btn btn-primary rounded-pill px-5 shadow-sm">Add Task</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+<!-- Task Details Modal -->
+<div class="modal fade" id="taskDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-5 p-4 border-0 shadow-lg">
+            <div class="modal-header border-0 pb-2">
+                <h5 class="modal-title fw-bold">
+                    <i class="fas fa-clipboard-list text-primary me-2"></i> Task Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-2">
+                <div class="mb-3">
+                    <div class="fw-bold fs-5" id="taskModalTitle">-</div>
+                    <div class="text-muted small mt-1" id="taskModalMeta">-</div>
+                    <p class="text-muted small mt-2 mb-0" id="taskModalDesc">-</p>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">Status</label>
+                    <select id="taskModalStatus" class="form-select rounded-pill">
+                        <option value="todo">To Do</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="button" id="taskModalSaveStatus" class="btn btn-primary rounded-pill fw-bold px-4">
+                        Update Status
+                    </button>
+                    <a href="#" id="taskModalOpenProject" class="btn btn-outline-primary rounded-pill fw-bold px-4">
+                        Open Project
+                    </a>
+                    <button type="button" class="btn btn-outline-secondary rounded-pill fw-bold px-4" data-bs-dismiss="modal">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{ selected_task_id|default_if_none:""|json_script:"selected-task-id" }}

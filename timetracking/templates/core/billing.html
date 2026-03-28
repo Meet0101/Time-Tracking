@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <h2 class="page-hero-title">Financial Hub</h2>
+        <p class="page-hero-subtitle">Generate invoices, pay with Razorpay (INR), and print receipts.</p>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="hero-badge d-none d-md-inline-flex"><i class="fas fa-receipt"></i> Billing Ready</span>
+        <a href="?generate=1" class="btn btn-primary rounded-pill px-5 py-2 shadow-sm fw-bold">
+            <i class="fas fa-file-invoice text-white me-2"></i> Generate New Invoice
+        </a>
+        {% if razorpay_enabled %}
+        <a href="?generate_test=1" class="btn btn-outline-primary rounded-pill px-4 py-2 fw-bold" title="₹1 invoice for Razorpay test">
+            <i class="fas fa-vial me-2"></i> ₹1 gateway test
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if razorpay_enabled and billable_amount < 1 %}
+<div class="alert alert-info border-0 rounded-4 shadow-sm mb-4" role="alert">
+    <strong>Bill abhi ₹0 / bahut kam hai?</strong> Razorpay kam se kam <strong>₹1</strong> leta hai. Neeche <strong>₹1 gateway test</strong> se chhota test invoice banao, phir <strong>Pay</strong> se card / UPI try karo.
+</div>
+{% endif %}
+{% if not razorpay_enabled %}
+<div class="alert alert-warning border-0 rounded-4 shadow-sm mb-4" role="alert">
+    <strong>Razorpay off.</strong> Add <code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code> to your <code>.env</code> (test keys from <a href="https://dashboard.razorpay.com/" target="_blank" rel="noopener">Razorpay Dashboard</a>), restart the server. Amounts are billed in <strong>INR</strong> (same numbers as invoice; sent to Razorpay as paise).
+</div>
+{% endif %}
+
+{% if razorpay_enabled %}
+<div class="card border border-primary border-2 border-opacity-25 rounded-4 shadow-sm mb-4 overflow-hidden">
+    <div class="card-header bg-primary bg-opacity-10 border-0 py-3">
+        <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-credit-card me-2"></i>Razorpay — card / UPI / netbanking (test mode)</h6>
+    </div>
+    <div class="card-body small">
+        <p class="mb-2"><strong>Success ke baad:</strong> Payment complete hone par browser <strong>wapis Billing page</strong> par aayega aur invoice <strong>Paid</strong> ho jayegi (redirect flow — Edge par <code>about:blank</code> / pop-up issue kam).</p>
+        <p class="mb-2"><strong>1. Pop-ups:</strong> Edge mein <strong>Pop-up blocked</strong> ho to <code>127.0.0.1:8000</code> ke liye <strong>Allow</strong> karo.</p>
+        <p class="mb-2"><strong>2. Mobile number:</strong> Checkout mein <strong>asli 10-digit Indian mobile</strong> (6–9 se start) bharo — fake / test digit se card / netbanking reject ho sakta hai.</p>
+        <p class="mb-2"><strong>3. Test cards:</strong> <code>5267 3181 8797 5449</code> (Mastercard) ya docs ke Visa; CVV + future expiry (<a href="https://razorpay.com/docs/payments/payments/test-card-details/" target="_blank" rel="noopener">Razorpay test cards</a>). Mock bank par <strong>4–10 digit OTP</strong> ya <strong>Success</strong>.</p>
+        <p class="mb-0"><strong>4. UPI:</strong> <code>success@razorpay</code>. Netbanking: test mode mein list se koi bank try karo — sab Dashboard → Payment methods se on hone chahiye.</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="row mb-5">
+    <div class="col-md-6 mb-4">
+        <div class="card p-5 border-0 shadow-lg rounded-5 bg-white h-100">
+            <h5 class="fw-bold mb-5 text-muted"> <i class="fas fa-chart-pie text-primary me-2"></i> Unbilled Metrics</h5>
+            <div class="d-flex justify-content-between my-3 align-items-center">
+                <p class="mb-0 fw-bold">Total Billable Hours</p>
+                <h4 class="fw-bold text-dark mb-0">{{ total_hours }}h</h4>
+            </div>
+            <div class="d-flex justify-content-between my-3 align-items-center">
+                <p class="mb-0 fw-bold">Hourly Rate (₹)</p>
+                <h4 class="fw-bold text-dark mb-0">₹{{ hourly_rate|floatformat:2 }}</h4>
+            </div>
+            <hr class="my-4 op-25">
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <p class="mb-0 fw-bold text-muted">Estimated Unbilled Payout</p>
+                <h2 class="fw-bold text-primary mb-0">₹{{ billable_amount }}</h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card p-5 border-0 shadow-lg rounded-5 bg-white h-100">
+             <h5 class="fw-bold mb-5 text-muted"> <i class="fas fa-history text-secondary me-2"></i> Invoice History</h5>
+             <div class="table-responsive">
+                <table class="table table-hover align-middle border-0">
+                    <thead class="bg-light border-0">
+                        <tr>
+                            <th class="border-0 px-3 py-3 rounded-start">Date</th>
+                            <th class="border-0 py-3 text-center">Amount</th>
+                            <th class="border-0 py-3 text-center">Status</th>
+                            <th class="border-0 py-3 rounded-end text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="border-0">
+                        {% for invoice in invoices %}
+                        <tr class="border-bottom" data-invoice-row="{{ invoice.id }}">
+                            <td class="ps-3 py-3 fw-bold text-dark">{{ invoice.created_at|date:'M d, Y' }}</td>
+                            <td class="py-3 text-center"><span class="badge bg-light text-primary rounded-pill py-2 px-3 fw-bold">₹{{ invoice.amount }}</span></td>
+                            <td class="py-3 text-center">
+                                {% if invoice.payment_status == 'paid' %}
+                                <span class="badge bg-success rounded-pill">Paid</span>
+                                {% elif invoice.payment_status == 'failed' %}
+                                <span class="badge bg-danger rounded-pill">Failed</span>
+                                {% else %}
+                                <span class="badge bg-secondary rounded-pill">Unpaid</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 text-end">
+                                <div class="d-flex flex-wrap gap-1 justify-content-end">
+                                    {% if invoice.payment_status != 'paid' and razorpay_enabled %}
+                                    <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 fw-bold btn-pay-invoice" data-invoice-id="{{ invoice.id }}">
+                                        Pay <i class="fas fa-bolt ms-1"></i>
+                                    </button>
+                                    {% endif %}
+                                    <a href="{% url 'print_invoice' invoice.id %}" class="btn btn-light btn-sm rounded-pill px-3 shadow-sm border-0 fw-bold">Print <i class="fas fa-print ms-1"></i></a>
+                                </div>
+                            </td>
+                        </tr>
+
+                        {% empty %}
+                        <tr><td colspan="4" class="text-center py-5 text-muted">No invoices found</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+             </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if razorpay_enabled %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+(function () {
+  const createOrderUrl = "{% url 'razorpay_create_order' %}";
+  function getCsrfToken() {
+    const el = document.querySelector('#csrf-hidden-form input[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+  }
+  document.querySelectorAll('.btn-pay-invoice').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const invoiceId = parseInt(btn.getAttribute('data-invoice-id'), 10);
+      const csrf = getCsrfToken();
+      btn.disabled = true;
+      fetch(createOrderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrf,
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ invoice_id: invoiceId }),
+      })
+        .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            alert(res.data.error || 'Could not create order');
+            btn.disabled = false;
+            return;
+          }
+          const d = res.data;
+          var returnPath = "{% url 'razorpay_payment_return' 888888888 %}".replace(/888888888/g, String(d.invoice_id));
+          var callback_url = window.location.origin + returnPath;
+          // redirect:true — success ke baad browser wapas aata hai; Edge pop-up / about:blank 3DS issue kam hota hai.
+          const options = {
+            key: d.key_id,
+            order_id: d.order_id,
+            name: 'TimeTrack',
+            description: 'Invoice #' + d.invoice_id,
+            callback_url: callback_url,
+            redirect: true,
+            prefill: {
+              name: "{{ request.user.get_full_name|default:request.user.email|escapejs }}",
+              email: "{{ request.user.email|escapejs }}"
+            },
+            theme: { color: '#4f46e5' },
+            modal: {
+              ondismiss: function () { btn.disabled = false; }
+            }
+          };
+          const rzp = new Razorpay(options);
+          rzp.on('payment.failed', function (resp) {
+            btn.disabled = false;
+            var err = (resp && resp.error) ? resp.error : {};
+            var msg = err.description || err.reason || err.code || 'Card/UPI payment failed';
+            alert(msg);
+          });
+          rzp.open();
+        })
+        .catch(function () {
+          alert('Network error');
+          btn.disabled = false;
+        });
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

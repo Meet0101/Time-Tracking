@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <h2 class="page-hero-title">Future Enhancements</h2>
+        <p class="page-hero-subtitle">Roadmap-ready module for scaling the platform with AI and integrations.</p>
+    </div>
+    <span class="hero-badge d-none d-md-inline-flex"><i class="fas fa-rocket"></i> Product Roadmap</span>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-5 p-4 h-100">
+            <h5 class="fw-bold mb-3"><i class="fas fa-circle-check text-success me-2"></i>Implemented Foundations</h5>
+            <ul class="list-group list-group-flush">
+                {% for item in implemented_items %}
+                <li class="list-group-item border-0 px-0 py-2">{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-5 p-4 h-100">
+            <h5 class="fw-bold mb-3"><i class="fas fa-screwdriver-wrench text-warning me-2"></i>Working Enhancement Modules</h5>
+            <ul class="list-group list-group-flush">
+                {% for item in working_features %}
+                <li class="list-group-item border-0 px-0 py-2">{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-5 p-4 mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="fas fa-brain text-primary me-2"></i>Predictive Risk Engine (Working)</h5>
+        <span class="badge bg-light text-dark rounded-pill">Live from project data</span>
+    </div>
+    <p class="text-muted mb-3">
+        This prototype predicts delivery risk using current completion, overdue tasks, remaining load, and deadline pressure.
+    </p>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Project</th>
+                    <th>Progress</th>
+                    <th>Overdue</th>
+                    <th>Hours</th>
+                    <th>Risk</th>
+                    <th>Recommendation</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in risk_rows %}
+                <tr>
+                    <td>
+                        <a href="{% url 'project_detail' row.project.id %}" class="text-decoration-none fw-bold">
+                            {{ row.project.name }}
+                        </a>
+                    </td>
+                    <td>{{ row.done_tasks }}/{{ row.total_tasks }} ({{ row.completion_pct }}%)</td>
+                    <td>{{ row.overdue_tasks }}</td>
+                    <td>{{ row.spent_hours }}h</td>
+                    <td>
+                        <span class="badge {% if row.risk_level == 'High' %}bg-danger{% elif row.risk_level == 'Medium' %}bg-warning text-dark{% else %}bg-success{% endif %} rounded-pill">
+                            {{ row.risk_level }} - {{ row.risk_score }}
+                        </span>
+                    </td>
+                    <td class="small text-muted">{{ row.recommendation }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted">No project data yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-5 p-4 mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="fas fa-sliders text-success me-2"></i>Delivery Scenario Simulator (Working)</h5>
+        <span class="badge bg-light text-dark rounded-pill">Interactive</span>
+    </div>
+    <form method="get" class="row g-3 align-items-end mb-3">
+        <div class="col-md-5">
+            <label class="form-label fw-semibold">Project</label>
+            <select name="sim_project" class="form-select">
+                <option value="">Select project</option>
+                {% for p in projects %}
+                <option value="{{ p.id }}" {% if sim_project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label fw-semibold">Planned Daily Team Hours</label>
+            <input type="number" step="0.5" min="1" name="daily_hours" class="form-control" value="{{ planned_daily_hours }}">
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100 rounded-pill">Simulate ETA</button>
+        </div>
+    </form>
+    {% if simulator %}
+    <div class="row g-3">
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Remaining Tasks</div><div class="fw-bold fs-5">{{ simulator.remaining_tasks }}</div></div></div>
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Avg Hours/Task</div><div class="fw-bold fs-5">{{ simulator.avg_hours_per_done_task }}</div></div></div>
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Remaining Hours</div><div class="fw-bold fs-5">{{ simulator.projected_remaining_hours }}</div></div></div>
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Projected Finish</div><div class="fw-bold fs-6">{{ simulator.eta_date }}</div></div></div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

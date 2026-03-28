@@ -1,0 +1,12 @@
+<div class="page-hero">
+    <div>
+        <h2 class="page-hero-title">{{ title }}</h2>
+        <p class="page-hero-subtitle">{{ subtitle }}</p>
+    </div>
+    {% if badge_1 or badge_2 %}
+    <div class="hero-badges d-none d-md-flex">
+        {% if badge_1 %}<span class="hero-badge">{{ badge_1 }}</span>{% endif %}
+        {% if badge_2 %}<span class="hero-badge">{{ badge_2 }}</span>{% endif %}
+    </div>
+    {% endif %}
+</div>

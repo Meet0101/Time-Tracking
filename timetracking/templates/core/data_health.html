@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <h2 class="page-hero-title">Data Health &amp; QA</h2>
+        <p class="page-hero-subtitle">Live aggregates and sanity checks for demo and submission verification.</p>
+    </div>
+    <span class="hero-badge d-none d-md-inline-flex"><i class="fas fa-database"></i> Read-only</span>
+</div>
+
+<p class="small text-muted mb-4">Snapshot: {{ generated_at|date:"Y-m-d H:i:s" }} (server time)</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card p-4 h-100 border-0 shadow-sm rounded-5">
+            <div class="small text-muted fw-bold">Users</div>
+            <div class="display-6 fw-bold">{{ users_total }}</div>
+            <div class="small mt-2">Active: {{ users_active }} · Other: {{ users_inactive }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-4 h-100 border-0 shadow-sm rounded-5">
+            <div class="small text-muted fw-bold">Projects / Modules</div>
+            <div class="display-6 fw-bold">{{ projects_count }} <span class="fs-5 text-muted">/</span> {{ modules_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-4 h-100 border-0 shadow-sm rounded-5">
+            <div class="small text-muted fw-bold">Tasks</div>
+            <div class="display-6 fw-bold">{{ tasks_total }}</div>
+            <div class="small mt-2 text-danger fw-semibold {% if overdue_tasks == 0 %}d-none{% endif %}">{{ overdue_tasks }} overdue</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-4 h-100 border-0 shadow-sm rounded-5">
+            <div class="small text-muted fw-bold">Approved hours (all)</div>
+            <div class="display-6 fw-bold">{{ approved_hours_global }}h</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-5 p-4 h-100">
+            <h5 class="fw-bold mb-3"><i class="fas fa-users text-primary me-2"></i>Users by role</h5>
+            <table class="table table-sm mb-0">
+                <tbody>
+                    {% for role, count in users_by_role.items %}
+                    <tr><td class="text-capitalize">{{ role }}</td><td class="text-end fw-bold">{{ count }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="2" class="text-muted">No data</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-5 p-4 h-100">
+            <h5 class="fw-bold mb-3"><i class="fas fa-tasks text-warning me-2"></i>Tasks by status</h5>
+            <table class="table table-sm mb-0">
+                <tbody>
+                    <tr><td>To Do</td><td class="text-end fw-bold">{{ task_status_map.todo|default:0 }}</td></tr>
+                    <tr><td>In Progress</td><td class="text-end fw-bold">{{ task_status_map.in_progress|default:0 }}</td></tr>
+                    <tr><td>Done</td><td class="text-end fw-bold">{{ task_status_map.done|default:0 }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm rounded-5 p-4 mt-4">
+    <h5 class="fw-bold mb-3"><i class="fas fa-clock text-info me-2"></i>Time logs</h5>
+    <div class="row g-3">
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Total logs</div><div class="fw-bold fs-5">{{ logs_total }}</div></div></div>
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Auto timer</div><div class="fw-bold fs-5">{{ logs_auto }}</div></div></div>
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Manual</div><div class="fw-bold fs-5">{{ logs_manual }}</div></div></div>
+        <div class="col-md-3"><div class="p-3 rounded-4 bg-light"><div class="small text-muted">Active sessions</div><div class="fw-bold fs-5">{{ active_timers }}</div></div></div>
+    </div>
+    <table class="table table-sm mt-3 mb-0">
+        <thead><tr><th>Approval</th><th class="text-end">Count</th></tr></thead>
+        <tbody>
+            {% for key, val in log_approval_map.items %}
+            <tr><td class="text-capitalize">{{ key }}</td><td class="text-end fw-bold">{{ val }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2" class="text-muted">No logs</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="row g-4 mt-1">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-5 p-4 h-100">
+            <h5 class="fw-bold mb-3"><i class="fas fa-file-invoice text-success me-2"></i>Invoices &amp; notifications</h5>
+            <p class="mb-1"><span class="fw-bold">Invoices:</span> {{ invoices_count }}</p>
+            <p class="mb-1"><span class="fw-bold">Notifications:</span> {{ notif_total }} (unread: {{ notif_unread }})</p>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm rounded-5 p-4 h-100">
+            <h5 class="fw-bold mb-3"><i class="fas fa-clipboard-check text-danger me-2"></i>Quick checks</h5>
+            <ul class="list-unstyled mb-0">
+                {% for c in checks %}
+                <li class="mb-2 d-flex gap-2 align-items-start">
+                    {% if c.severity == 'success' %}
+                    <i class="fas fa-circle-check text-success mt-1"></i>
+                    {% elif c.severity == 'warning' %}
+                    <i class="fas fa-triangle-exclamation text-warning mt-1"></i>
+                    {% else %}
+                    <i class="fas fa-circle-info text-info mt-1"></i>
+                    {% endif %}
+                    <div>
+                        <span class="fw-bold">{{ c.label }}</span>
+                        <div class="small text-muted">{{ c.detail }}</div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

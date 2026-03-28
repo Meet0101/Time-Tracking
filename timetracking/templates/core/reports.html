@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-hero">
+    <div>
+        <h2 class="page-hero-title">Reports & Insights</h2>
+        <p class="page-hero-subtitle">Track performance, completion health, and time distribution with visual analytics.</p>
+    </div>
+    <div class="hero-badges d-none d-md-flex">
+        <span class="hero-badge"><i class="fas fa-chart-line"></i> Real-time Charts</span>
+        <span class="hero-badge"><i class="fas fa-database"></i> Data-driven</span>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-md-8">
+        <div class="card p-5 border-0 shadow-sm rounded-5 h-100">
+            <h5 class="fw-bold mb-4"> <i class="fas fa-users-cog text-primary me-2"></i> User Participation</h5>
+            <canvas id="userTimeChart" height="300"></canvas>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card p-5 border-0 shadow-sm rounded-5 h-100">
+            <h5 class="fw-bold mb-4"> <i class="fas fa-bullseye text-warning me-2"></i> Project Health</h5>
+
+            <div class="mb-4">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="small fw-bold text-muted">Overall completion</span>
+                    <span class="small fw-bold text-primary">{{ completion_rate }}%</span>
+                </div>
+                <div class="progress rounded-pill shadow-sm" style="height: 12px;">
+                    <div class="progress-bar bg-primary rounded-pill" style="width: {{ completion_rate }}%;"></div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="small fw-bold text-muted">Upcoming deadlines</span>
+                    <span class="small fw-bold text-success">{{ upcoming_deadlines }}</span>
+                </div>
+                <div class="progress rounded-pill shadow-sm" style="height: 12px;">
+                    <div class="progress-bar bg-success rounded-pill" style="width: {% widthratio upcoming_deadlines 5 100 %}%;"></div>
+                </div>
+            </div>
+
+            <div class="mb-2">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="small fw-bold text-muted">Task status</span>
+                    <span class="small fw-bold">Distribution</span>
+                </div>
+                <canvas id="statusDonutChart" height="150"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card p-5 border-0 shadow-sm rounded-5">
+            <h5 class="fw-bold mb-4"> <i class="fas fa-tasks text-muted me-2"></i> Project Progress</h5>
+            <canvas id="projectCompletionChart" height="120" class="mb-4"></canvas>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle border-0">
+                    <thead class="bg-light border-0">
+                        <tr>
+                            <th class="border-0 px-3 py-3 rounded-start">Project Name</th>
+                            <th class="border-0 py-3">Team Size</th>
+                            <th class="border-0 py-3">Tasks Completed</th>
+                            <th class="border-0 py-3">Progress</th>
+                            <th class="border-0 py-3 rounded-end">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="border-0">
+                        {% for project in projects_progress %}
+                        <tr class="border-bottom">
+                            <td class="ps-3 py-3 fw-bold text-dark">{{ project.name }}</td>
+                            <td class="py-3">{{ project.members }}</td>
+                            <td class="py-3">{{ project.done }} / {{ project.total }}</td>
+                            <td class="py-3" style="width: 200px;">
+                                <div class="progress rounded-pill" style="height: 6px;">
+                                    {% if project.total == 0 %}
+                                    <div class="progress-bar bg-secondary" style="width: 0%;"></div>
+                                    {% else %}
+                                    <div class="progress-bar bg-primary js-progress-bar" data-width="{% widthratio project.done project.total 100 %}"></div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="py-3"><span class="badge bg-light text-success rounded-pill py-2 px-3 fw-bold">On Track</span></td>
+
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{{ user_labels|json_script:"user-labels" }}
+{{ user_seconds|json_script:"user-seconds" }}
+{{ project_names|json_script:"project-names" }}
+{{ project_percents|json_script:"project-percents" }}
+{{ status_labels|json_script:"status-labels" }}
+{{ status_counts|json_script:"status-counts" }}
+<script>
+    const userTimeCtx = document.getElementById('userTimeChart').getContext('2d');
+    const statusCtx = document.getElementById('statusDonutChart').getContext('2d');
+    const projectCtx = document.getElementById('projectCompletionChart').getContext('2d');
+    const userLabels = JSON.parse(document.getElementById('user-labels').textContent);
+    const userSeconds = JSON.parse(document.getElementById('user-seconds').textContent);
+    const statusLabels = JSON.parse(document.getElementById('status-labels').textContent);
+    const statusCounts = JSON.parse(document.getElementById('status-counts').textContent);
+    const projectNames = JSON.parse(document.getElementById('project-names').textContent);
+    const projectPercents = JSON.parse(document.getElementById('project-percents').textContent);
+
+    let userChart;
+    let statusChart;
+    let projectChart;
+
+    function renderReportsCharts() {
+        const p = window.getChartPalette ? window.getChartPalette() : {
+            primary: '#4f46e5', warning: '#f59e0b', success: '#10b981', text: '#475569', grid: 'rgba(148,163,184,0.18)', surface: 'rgba(79,70,229,0.25)'
+        };
+        if (userChart) userChart.destroy();
+        if (statusChart) statusChart.destroy();
+        if (projectChart) projectChart.destroy();
+
+        userChart = new Chart(userTimeCtx, {
+            type: 'bar',
+            data: {
+                labels: userLabels,
+                datasets: [{
+                    label: 'Hours Spent',
+                    data: userSeconds,
+                    backgroundColor: p.primary,
+                    borderRadius: 15,
+                    borderSkipped: false,
+                    barThickness: 30
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: p.grid }, ticks: { color: p.text } },
+                    y: { grid: { color: p.grid }, ticks: { color: p.text } }
+                }
+            }
+        });
+
+        statusChart = new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: statusLabels,
+                datasets: [{
+                    data: statusCounts,
+                    backgroundColor: [p.primary, p.warning, p.success],
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                plugins: { legend: { position: 'bottom', labels: { color: p.text } } },
+                cutout: '65%'
+            }
+        });
+
+        projectChart = new Chart(projectCtx, {
+            type: 'bar',
+            data: {
+                labels: projectNames,
+                datasets: [{
+                    data: projectPercents,
+                    backgroundColor: p.surface,
+                    borderColor: p.primary,
+                    borderWidth: 1,
+                    borderRadius: 12,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: p.grid }, beginAtZero: true, max: 100, ticks: { color: p.text } },
+                    y: { grid: { color: p.grid }, ticks: { color: p.text } }
+                }
+            }
+        });
+    }
+
+    // Apply dynamic widths to bypass IDE CSS linting inside inline styles
+    document.querySelectorAll('.js-progress-bar').forEach(function(bar) {
+        bar.style.width = bar.getAttribute('data-width') + '%';
+    });
+
+    renderReportsCharts();
+    window.addEventListener('themeChanged', renderReportsCharts);
+</script>
+{% endblock %}
+

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Export</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
+        h2 { margin-bottom: 4px; }
+        p { color: #475569; margin-top: 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th, td { border: 1px solid #cbd5e1; padding: 8px; font-size: 13px; vertical-align: top; }
+        th { background: #eef2ff; text-align: left; }
+        @media print {
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print" style="margin-bottom:12px;">
+        <button onclick="window.print()">Print / Save as PDF</button>
+    </div>
+    <h2>Activity report — TimeTrack</h2>
+    <p>Generated activity timeline export.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Title</th>
+                <th>Meta</th>
+                <th>When</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in rows %}
+            <tr>
+                <td>{{ item.type }}</td>
+                <td>{{ item.title }}</td>
+                <td>{{ item.meta }}</td>
+                <td>{{ item.when|date:"Y-m-d H:i" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4">No activity records found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load django_bootstrap5 %}
+
+{% block content %}
+<div class="row align-items-center mb-5 mt-3">
+    <div class="col">
+        <h2 class="fw-bold mb-0">Time Tracker</h2>
+        <p class="text-muted mb-0">Monitor your billable hours and productivity.</p>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <!-- Timer Control -->
+    <div class="col-md-5">
+        <div class="card p-5 border-0 shadow-lg rounded-5 bg-white text-center h-100">
+            <h5 class="fw-bold mb-3 text-muted"> <i class="fas fa-play text-primary me-2"></i> Current Session</h5>
+            <div class="timer-display my-4 py-4">
+                <h1 class="display-3 fw-bold text-dark" id="live-timer-display" data-start="{% if active_log %}{{ active_log.start_time|date:'c' }}{% endif %}">
+                    {% if active_log %}00:00:00{% else %}00:00:00{% endif %}
+                </h1>
+                <p id="timer-status-badge" class="badge bg-secondary mb-0 rounded-pill py-2 px-4 shadow-sm fw-bold">Ready to Start</p>
+                {% if active_log %}
+                <p class="mt-3 fw-bold text-primary small"> <i class="fas fa-layer-group me-1 text-muted"></i> {{ active_log.task.title }}</p>
+                {% endif %}
+            </div>
+            <div class="timer-controls mt-2">
+                {% if not active_log %}
+                <div class="mb-4 d-flex justify-content-center">
+                   <select id="timer-task-select" class="form-select rounded-pill pe-5 w-75 shadow-sm border-0 bg-light" style="padding: 1rem 1.5rem;">
+                       <option value="">Select Task to track...</option>
+                       {% for task in user_tasks %}
+                       <option value="{{ task.id }}">{{ task.title }} ({{ task.module.project.name }})</option>
+                       {% endfor %}
+                   </select>
+                </div>
+                <button class="btn btn-primary btn-start-timer px-5 py-3 rounded-pill shadow-lg fw-bold w-100"> <i class="fas fa-stopwatch me-2"></i> Start Tracking </button>
+                {% else %}
+                <button id="btn-stop-timer" class="btn btn-danger px-5 py-3 rounded-pill shadow-lg fw-bold w-100 timer-pulse"> <i class="fas fa-stop me-2"></i> Stop Tracking </button>
+                {% endif %}
+                {% csrf_token %}
+            </div>
+
+            <hr class="my-4">
+
+            <!-- Manual Time Entry -->
+            <div class="text-start">
+                <h5 class="fw-bold mb-3 text-muted">
+                    <i class="fas fa-pen-nib text-primary me-2"></i> Manual Time Entry
+                </h5>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="manual_log">
+                    {% bootstrap_field manual_form.task %}
+                    {% bootstrap_field manual_form.custom_task_title %}
+                    {% bootstrap_field manual_form.start_time %}
+                    {% bootstrap_field manual_form.end_time %}
+                    <div class="small text-muted mt-2">
+                        Tip: Task select kar sakte ho ya naya task name type kar sakte ho.
+                    </div>
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-outline-primary rounded-pill px-5 shadow-sm fw-bold w-100">
+                            Save Manual Log
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            {% if can_approve %}
+            <hr class="my-4">
+            <div class="text-start">
+                <h5 class="fw-bold mb-3 text-muted">
+                    <i class="fas fa-user-check text-success me-2"></i> Pending Manual Approvals
+                </h5>
+                {% for pending in pending_manual_logs %}
+                <div class="border rounded-4 p-3 mb-3 bg-light-subtle">
+                    <div class="fw-bold">{{ pending.user.email }} - {{ pending.task.title }}</div>
+                    <div class="small text-muted mb-2">{{ pending.start_time }} to {{ pending.end_time }}</div>
+                    <form method="post" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="log_id" value="{{ pending.id }}">
+                        <input type="text" name="approval_note" class="form-control form-control-sm" placeholder="Optional note">
+                        <button type="submit" name="action" value="approve_manual" class="btn btn-success btn-sm rounded-pill px-3">Approve</button>
+                        <button type="submit" name="action" value="reject_manual" class="btn btn-outline-danger btn-sm rounded-pill px-3">Reject</button>
+                    </form>
+                </div>
+                {% empty %}
+                <div class="small text-muted">No pending manual logs.</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Stats summary -->
+    <div class="col-md-7">
+        <div class="card p-4 border-0 shadow-sm rounded-5 bg-white h-100">
+            <h5 class="fw-bold mb-4"> <i class="fas fa-history text-muted me-2"></i> Recent Logs</h5>
+            <div class="table-responsive">
+                <table class="table table-hover border-0">
+                    <thead class="bg-light border-0">
+                        <tr>
+                            <th class="border-0 px-3 py-3 rounded-start">Task</th>
+                            <th class="border-0 py-3">Duration</th>
+                            <th class="border-0 py-3">Date</th>
+                            <th class="border-0 py-3 rounded-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="border-0">
+                        {% for log in logs %}
+                        <tr class="align-middle border-bottom">
+                            <td class="ps-3 py-3">
+                                <a href="{% url 'tasks' %}?task={{ log.task.id }}" class="fw-bold text-dark text-decoration-none">{{ log.task.title }}</a>
+                                <br>
+                                <a href="{% url 'project_detail' log.task.module.project.id %}" class="small text-muted text-decoration-none">
+                                    {{ log.task.module.project.name }}
+                                </a>
+                            </td>
+                            <td class="py-3">
+                                <span class="badge bg-light text-primary rounded-pill py-2 px-3 fw-bold">
+                                    {% if log.total_time %}{{ log.total_time }}{% else %}--{% endif %}
+                                </span>
+                                {% if log.entry_type == 'manual' %}
+                                <span class="badge {% if log.approval_status == 'approved' %}bg-success{% elif log.approval_status == 'rejected' %}bg-danger{% else %}bg-warning text-dark{% endif %} rounded-pill py-2 px-3 fw-bold">
+                                    {{ log.approval_status|title }}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted small py-3">{{ log.start_time|date:'M d, Y' }}</td>
+                            <td class="py-3 d-flex gap-2">
+                                <a href="{% url 'tasks' %}?task={{ log.task.id }}" class="btn btn-light btn-sm rounded-pill">Task</a>
+                                <a href="{% url 'project_detail' log.task.module.project.id %}" class="btn btn-outline-secondary btn-sm rounded-pill">Project</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-center py-5 text-muted">No logs found</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
