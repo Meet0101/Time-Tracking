@@ -12,9 +12,9 @@
 <div class="row mb-5">
     <!-- Timer Control -->
     <div class="col-md-5">
-        <div class="card p-5 border-0 shadow-lg rounded-5 bg-white text-center h-100">
+        <div class="card tracking-focus-card p-5 border-0 shadow-lg rounded-5 bg-white text-center h-100">
             <h5 class="fw-bold mb-3 text-muted"> <i class="fas fa-play text-primary me-2"></i> Current Session</h5>
-            <div class="timer-display my-4 py-4">
+            <div class="timer-display my-4 py-4 position-relative">
                 <h1 class="display-3 fw-bold text-dark" id="live-timer-display" data-start="{% if active_log %}{{ active_log.start_time|date:'c' }}{% endif %}">
                     {% if active_log %}00:00:00{% else %}00:00:00{% endif %}
                 </h1>
@@ -23,17 +23,22 @@
                 <p class="mt-3 fw-bold text-primary small"> <i class="fas fa-layer-group me-1 text-muted"></i> {{ active_log.task.title }}</p>
                 {% endif %}
             </div>
-            <div class="timer-controls mt-2">
+            <div class="timer-controls mt-2 position-relative">
                 {% if not active_log %}
+                <div class="mb-3 text-start">
+                    <label for="timer-custom-title" class="form-label fw-bold small text-muted mb-1">Task name (type to start)</label>
+                    <input type="text" id="timer-custom-title" name="timer_custom_title" class="form-control form-control-lg rounded-4 shadow-sm" placeholder="Jo track karna ho yahan likho…" autocomplete="off">
+                </div>
+                <div class="mb-2 small text-muted text-start">Ya list se chuno (agar task pehle se hai):</div>
                 <div class="mb-4 d-flex justify-content-center">
-                   <select id="timer-task-select" class="form-select rounded-pill pe-5 w-75 shadow-sm border-0 bg-light" style="padding: 1rem 1.5rem;">
-                       <option value="">Select Task to track...</option>
+                   <select id="timer-task-select" class="form-select rounded-pill pe-5 w-100 shadow-sm border-0 bg-light" style="padding: 1rem 1.5rem;">
+                       <option value="">— List se task (optional) —</option>
                        {% for task in user_tasks %}
                        <option value="{{ task.id }}">{{ task.title }} ({{ task.module.project.name }})</option>
                        {% endfor %}
                    </select>
                 </div>
-                <button class="btn btn-primary btn-start-timer px-5 py-3 rounded-pill shadow-lg fw-bold w-100"> <i class="fas fa-stopwatch me-2"></i> Start Tracking </button>
+                <button type="button" class="btn btn-primary btn-start-timer px-5 py-3 rounded-pill shadow-lg fw-bold w-100"> <i class="fas fa-stopwatch me-2"></i> Start Tracking </button>
                 {% else %}
                 <button id="btn-stop-timer" class="btn btn-danger px-5 py-3 rounded-pill shadow-lg fw-bold w-100 timer-pulse"> <i class="fas fa-stop me-2"></i> Stop Tracking </button>
                 {% endif %}
@@ -43,19 +48,24 @@
             <hr class="my-4">
 
             <!-- Manual Time Entry -->
-            <div class="text-start">
+            <div class="text-start manual-entry-stack position-relative">
                 <h5 class="fw-bold mb-3 text-muted">
                     <i class="fas fa-pen-nib text-primary me-2"></i> Manual Time Entry
                 </h5>
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="manual_log">
-                    {% bootstrap_field manual_form.task %}
+                    {% if manual_form.non_field_errors %}
+                    <div class="alert alert-danger small mb-3">
+                        {% for err in manual_form.non_field_errors %}{{ err }}{% endfor %}
+                    </div>
+                    {% endif %}
                     {% bootstrap_field manual_form.custom_task_title %}
+                    {% bootstrap_field manual_form.task %}
                     {% bootstrap_field manual_form.start_time %}
                     {% bootstrap_field manual_form.end_time %}
                     <div class="small text-muted mt-2">
-                        Tip: Task select kar sakte ho ya naya task name type kar sakte ho.
+                        Pehle <strong>task name likho</strong>; chaaho to neeche se purana task bhi chun sakte ho. Start / end time bharo, phir save.
                     </div>
                     <div class="mt-4">
                         <button type="submit" class="btn btn-outline-primary rounded-pill px-5 shadow-sm fw-bold w-100">

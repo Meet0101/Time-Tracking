@@ -64,12 +64,23 @@ class ManualTimeEntryForm(forms.Form):
     Manual time entry ke liye simple form (AJAX timer nahi).
     """
 
-    task = forms.ModelChoiceField(queryset=Task.objects.none(), required=False)
     custom_task_title = forms.CharField(
         required=False,
         max_length=200,
-        label="Or type task name",
-        widget=forms.TextInput(attrs={"placeholder": "e.g. Client call, Bug fix, Design review"}),
+        label="Task name (type here)",
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "Jo kaam kiya — yahan likho (e.g. client call, bug fix)",
+                "autocomplete": "off",
+                "class": "form-control form-control-lg",
+            }
+        ),
+    )
+    task = forms.ModelChoiceField(
+        queryset=Task.objects.none(),
+        required=False,
+        label="Existing task (optional)",
+        empty_label="— Optional: pick existing task —",
     )
     start_time = forms.DateTimeField(
         widget=forms.DateTimeInput(attrs={'type': 'datetime-local'})
@@ -88,5 +99,5 @@ class ManualTimeEntryForm(forms.Form):
         task = cleaned_data.get("task")
         custom_task_title = (cleaned_data.get("custom_task_title") or "").strip()
         if not task and not custom_task_title:
-            raise forms.ValidationError("Select a task or type a task name.")
+            raise forms.ValidationError("Neeche task name likho ya optional list se task chuno — dono khali nahi chhod sakte.")
         return cleaned_data

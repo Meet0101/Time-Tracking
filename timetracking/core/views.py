@@ -559,6 +559,44 @@ def project_detail(request, project_id):
     )
 
 
+def _apply_task_form_querysets(form, request, can_assign):
+    """Developers + active users in assign list; avoid empty queryset when no devs yet."""
+    if can_assign:
+        assign_qs = User.objects.filter(status="active").filter(Q(role="developer") | Q(pk=request.user.pk)).distinct()
+        form.fields["assigned_to"].queryset = assign_qs
+        form.fields["assigned_to"].required = False
+    else:
+        form.fields["assigned_to"].queryset = User.objects.filter(id=request.user.id)
+        form.fields["assigned_to"].required = True
+    form.fields["module"].queryset = Module.objects.select_related("project").order_by("project__name", "name")
+    form.fields["module"].empty_label = "Select project module"
+
+
+def _create_quick_task_for_user(user, title: str) -> Task:
+    """Ad-hoc task in the user's personal workspace (manual log, live timer)."""
+    title = (title or "").strip()
+    personal_project, _ = Project.objects.get_or_create(
+        name=f"{user.email} Personal Workspace",
+        created_by=user,
+        defaults={
+            "description": "Auto-created personal project for time entries.",
+            "start_date": timezone.now().date(),
+        },
+    )
+    personal_module, _ = Module.objects.get_or_create(
+        project=personal_project,
+        name="General",
+    )
+    return Task.objects.create(
+        module=personal_module,
+        assigned_to=user,
+        title=title,
+        description="Task created from time entry.",
+        status="in_progress",
+        priority="medium",
+    )
+
+
 @login_required
 def tasks(request):
     can_assign = request.user.role in ["admin", "manager"]
@@ -578,20 +616,21 @@ def tasks(request):
     in_progress_tasks = tasks_list.filter(status='in_progress')
     done_tasks = tasks_list.filter(status='done')
 
-    if request.method == 'POST':
+    open_new_task_modal = False
+    modules_exist = Module.objects.exists()
+    tasks_querysuffix = ("?" + request.GET.urlencode()) if request.GET else ""
+
+    if request.method == "POST" and request.POST.get("create_task"):
         form = TaskForm(request.POST)
-        if can_assign:
-            form.fields["assigned_to"].queryset = User.objects.filter(role="developer", status="active")
-        else:
-            form.fields['assigned_to'].queryset = User.objects.filter(id=request.user.id)
+        _apply_task_form_querysets(form, request, can_assign)
         if form.is_valid():
             task = form.save(commit=False)
             if not can_assign:
-                # Developer board me created task always self-assigned rahega.
+                task.assigned_to = request.user
+            elif not task.assigned_to_id:
                 task.assigned_to = request.user
             task.save()
 
-            # Task assigned alert
             if task.assigned_to_id:
                 Notification.objects.create(
                     user=task.assigned_to,
@@ -601,13 +640,11 @@ def tasks(request):
                 )
 
             messages.success(request, "Task created successfully.")
-            return redirect('tasks')
+            return redirect(f"{reverse('tasks')}{tasks_querysuffix}")
+        open_new_task_modal = True
     else:
         form = TaskForm()
-        if can_assign:
-            form.fields["assigned_to"].queryset = User.objects.filter(role="developer", status="active")
-        else:
-            form.fields['assigned_to'].queryset = User.objects.filter(id=request.user.id)
+        _apply_task_form_querysets(form, request, can_assign)
 
     return render(request, 'core/tasks.html', {
         'todo': todo_tasks,
@@ -615,6 +652,9 @@ def tasks(request):
         'done': done_tasks,
         'form': form,
         'can_assign': can_assign,
+        'open_new_task_modal': open_new_task_modal,
+        'modules_exist': modules_exist,
+        'tasks_querysuffix': tasks_querysuffix,
         'selected_project_id': int(selected_project_id) if selected_project_id and selected_project_id.isdigit() else None,
         'selected_task_id': int(selected_task_id) if selected_task_id and selected_task_id.isdigit() else None,
         'selected_status': selected_status if selected_status in {"todo", "in_progress", "done"} else "",
@@ -648,26 +688,7 @@ def tracking(request):
                 end_time = manual_form.cleaned_data['end_time']
 
                 if task is None and custom_task_title:
-                    personal_project, _ = Project.objects.get_or_create(
-                        name=f"{request.user.email} Personal Workspace",
-                        created_by=request.user,
-                        defaults={
-                            "description": "Auto-created personal project for manual time entries.",
-                            "start_date": timezone.now().date(),
-                        },
-                    )
-                    personal_module, _ = Module.objects.get_or_create(
-                        project=personal_project,
-                        name="General",
-                    )
-                    task = Task.objects.create(
-                        module=personal_module,
-                        assigned_to=request.user,
-                        title=custom_task_title,
-                        description="Task created from manual time entry.",
-                        status="in_progress",
-                        priority="medium",
-                    )
+                    task = _create_quick_task_for_user(request.user, custom_task_title)
 
                 if end_time < start_time:
                     messages.error(request, "End time start time se pehle nahi ho sakta.")
@@ -1383,17 +1404,28 @@ def profile_activity_export_pdf(request):
 
 # AJAX API Views
 @login_required
+@require_POST
 def api_timer_start(request):
-    task_id = request.POST.get('task_id')
-    task_qs = Task.objects.all()
-    if request.user.role == 'developer':
-        task_qs = task_qs.filter(assigned_to=request.user)
-    task = get_object_or_404(task_qs, id=task_id)
-    # Check if there's already an active timer
+    custom_title = (request.POST.get("custom_title") or "").strip()
+    task_id = request.POST.get("task_id")
+
     active = TimeLog.objects.filter(user=request.user, end_time__isnull=True)
     if active.exists():
-        return JsonResponse({'error': 'You already have an active timer! Stop it first.'})
-    
+        return JsonResponse({"error": "You already have an active timer! Stop it first."})
+
+    task = None
+    if task_id:
+        task_qs = Task.objects.all()
+        if request.user.role == "developer":
+            task_qs = task_qs.filter(assigned_to=request.user)
+        task = get_object_or_404(task_qs, id=task_id)
+    elif custom_title:
+        task = _create_quick_task_for_user(request.user, custom_title)
+    else:
+        return JsonResponse(
+            {"error": "Select a task from the list or type a task name in the box."}
+        )
+
     log = TimeLog.objects.create(
         task=task,
         user=request.user,

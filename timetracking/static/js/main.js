@@ -133,19 +133,22 @@ $(document).ready(function () {
 
     // AJAX Timer Management
     $(".btn-start-timer").click(function () {
-        const taskId = $("#timer-task-select").val();
-        if (!taskId) {
-            showAppToast("Select a task first!", "warning");
+        const taskId = ($("#timer-task-select").val() || "").trim();
+        const customTitle = ($("#timer-custom-title").val() || "").trim();
+        const payload = { csrfmiddlewaretoken: getCSRF() };
+        if (taskId) {
+            payload.task_id = taskId;
+        } else if (customTitle) {
+            payload.custom_title = customTitle;
+        } else {
+            showAppToast("Task name likho (upar) ya list se task chuno.", "warning");
             return;
         }
 
         $.ajax({
             url: "/core/api/timer/start/",
             method: "POST",
-            data: {
-                task_id: taskId,
-                csrfmiddlewaretoken: getCSRF()
-            },
+            data: payload,
             success: function (response) {
                 if (response.status === "ok") {
                     location.reload();

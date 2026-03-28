@@ -18,7 +18,7 @@
             <span class="hero-badge"><i class="fas fa-grip"></i> Drag & Drop</span>
             <span class="hero-badge"><i class="fas fa-filter"></i> Clear Status</span>
         </div>
-        <button class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
             <i class="fas fa-plus me-2"></i> Add Task
         </button>
     </div>
@@ -36,13 +36,20 @@
 </div>
 {% endif %}
 
+{% if not modules_exist %}
+<div class="alert alert-warning border-0 rounded-4 shadow-sm">
+    <strong>No module yet.</strong> Add a <strong>Project</strong> and a <strong>Module</strong> under
+    <a href="{% url 'projects' %}" class="fw-bold">Projects</a> first — tasks must belong to a module.
+</div>
+{% endif %}
+
 {% if not todo and not in_progress and not done %}
 <div class="card border-0 shadow-sm rounded-5 p-5 text-center mb-4">
     <img src="/static/images/empty-tasks.svg" alt="No tasks yet" style="max-width: 360px;" class="mx-auto mb-3">
     <h4 class="fw-bold mb-2">No tasks yet</h4>
     <p class="text-muted mb-4">Your board is empty. Create your first task to get started.</p>
     <div>
-        <button class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
+        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTaskModal">
             <i class="fas fa-plus me-2"></i> Create First Task
         </button>
     </div>
@@ -54,7 +61,7 @@
     <div class="col-md-4 kanban-column" data-status="todo">
         <div class="p-3 mb-4 d-flex align-items-center justify-content-between">
             <h6 class="fw-bold text-uppercase mb-0 text-muted small"><i class="fas fa-circle text-secondary me-2"></i> To Do <span class="badge bg-light text-dark ms-2 rounded-pill">{{ todo.count }}</span></h6>
-            <button class="btn btn-light btn-sm rounded-circle shadow-sm fw-bold"><i class="fas fa-ellipsis-h text-muted"></i></button>
+            <button type="button" class="btn btn-light btn-sm rounded-circle shadow-sm fw-bold"><i class="fas fa-ellipsis-h text-muted"></i></button>
         </div>
         <div class="kanban-items">
             {% for task in todo %}
@@ -90,7 +97,7 @@
     <div class="col-md-4 kanban-column" data-status="in_progress">
         <div class="p-3 mb-4 d-flex align-items-center justify-content-between">
             <h6 class="fw-bold text-uppercase mb-0 text-primary small"><i class="fas fa-circle text-primary me-2"></i> In Progress <span class="badge bg-light text-dark ms-2 rounded-pill">{{ in_progress.count }}</span></h6>
-             <button class="btn btn-light btn-sm rounded-circle shadow-sm fw-bold"><i class="fas fa-plus text-primary"></i></button>
+             <button type="button" class="btn btn-light btn-sm rounded-circle shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#newTaskModal" title="Add task"><i class="fas fa-plus text-primary"></i></button>
         </div>
         <div class="kanban-items">
             {% for task in in_progress %}
@@ -161,19 +168,26 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form method="post">
+                <form method="post" action="{% url 'tasks' %}{{ tasks_querysuffix }}" novalidate>
                     {% csrf_token %}
+                    <input type="hidden" name="create_task" value="1">
+                    {% if form.errors %}
+                    <div class="alert alert-danger small mb-3">
+                        {% for field in form %}
+                            {% for err in field.errors %}<div>{{ field.label }}: {{ err }}</div>{% endfor %}
+                        {% endfor %}
+                        {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+                    </div>
+                    {% endif %}
                     {% bootstrap_form form %}
                     <div class="mt-4 text-end">
-                        <button type="submit" class="btn btn-primary rounded-pill px-5 shadow-sm">Add Task</button>
+                        <button type="submit" name="create_task_submit" value="1" class="btn btn-primary rounded-pill px-5 shadow-sm">Add Task</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
-
-{% endblock %}
 
 <!-- Task Details Modal -->
 <div class="modal fade" id="taskDetailModal" tabindex="-1" aria-hidden="true">
@@ -217,3 +231,15 @@
     </div>
 </div>
 {{ selected_task_id|default_if_none:""|json_script:"selected-task-id" }}
+
+{% if open_new_task_modal %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var el = document.getElementById("newTaskModal");
+  if (el && typeof bootstrap !== "undefined" && bootstrap.Modal) {
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  }
+});
+</script>
+{% endif %}
+{% endblock %}
