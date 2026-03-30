@@ -36,11 +36,13 @@
         <h6 class="fw-bold mb-0 text-primary"><i class="fas fa-credit-card me-2"></i>Razorpay — card / UPI / netbanking (test mode)</h6>
     </div>
     <div class="card-body small">
-        <p class="mb-2"><strong>Success ke baad:</strong> Payment complete hone par browser <strong>wapis Billing page</strong> par aayega aur invoice <strong>Paid</strong> ho jayegi (redirect flow — Edge par <code>about:blank</code> / pop-up issue kam).</p>
-        <p class="mb-2"><strong>1. Pop-ups:</strong> Edge mein <strong>Pop-up blocked</strong> ho to <code>127.0.0.1:8000</code> ke liye <strong>Allow</strong> karo.</p>
-        <p class="mb-2"><strong>2. Mobile number:</strong> Checkout mein <strong>asli 10-digit Indian mobile</strong> (6–9 se start) bharo — fake / test digit se card / netbanking reject ho sakta hai.</p>
-        <p class="mb-2"><strong>3. Test cards:</strong> <code>5267 3181 8797 5449</code> (Mastercard) ya docs ke Visa; CVV + future expiry (<a href="https://razorpay.com/docs/payments/payments/test-card-details/" target="_blank" rel="noopener">Razorpay test cards</a>). Mock bank par <strong>4–10 digit OTP</strong> ya <strong>Success</strong>.</p>
-        <p class="mb-0"><strong>4. UPI:</strong> <code>success@razorpay</code>. Netbanking: test mode mein list se koi bank try karo — sab Dashboard → Payment methods se on hone chahiye.</p>
+        <p class="mb-2"><strong>Success ke baad:</strong> Razorpay <strong>full-page redirect</strong> se wapas Billing par aayega (Edge par card ke waqt <code>about:blank</code> pop-up issue ke liye yeh flow use hota hai).</p>
+        <p class="mb-2"><strong>1. Mock bank (zaroori):</strong> Test card ke baad jo <strong>sample bank</strong> page khule, wahan <strong>Success</strong> dabao — ya OTP mein <strong>kam se kam 4 digit</strong> (jaise <code>1234</code>) likho; chhota OTP / Failure = payment fail dikhega.</p>
+        <p class="mb-2"><strong>2. Edge:</strong> <code>127.0.0.1:8000</code> ke liye <strong>Pop-ups allow</strong> karo; phir bhi dikkat ho to <strong>Chrome</strong> se try karo.</p>
+        <p class="mb-2"><strong>3. Mobile:</strong> Checkout par <strong>asli Indian mobile</strong> (6–9 se start). Apne <code>.env</code> mein <code>RAZORPAY_PREFILL_CONTACT=+91XXXXXXXXXX</code> set karke server restart — auto-fill ho jayega.</p>
+        <p class="mb-2"><strong>4. Test cards:</strong> Sirf <strong>test mode keys</strong> ke saath — <code>5267 3181 8797 5449</code> (Mastercard) ya <a href="https://razorpay.com/docs/payments/payments/test-card-details/" target="_blank" rel="noopener">docs</a> wala Visa; koi bhi CVV, future expiry.</p>
+        <p class="mb-2"><strong>5. Dashboard:</strong> <a href="https://dashboard.razorpay.com/" target="_blank" rel="noopener">Razorpay Dashboard</a> → Settings → <strong>API keys</strong> (test key = <code>rzp_test_</code>). <strong>Cards</strong> payment method on ho.</p>
+        <p class="mb-0"><strong>6. UPI test:</strong> <code>success@razorpay</code> — agar UPI chal jaye par card nahi, to issue Razorpay account / method side zyada hota hai.</p>
     </div>
 </div>
 {% endif %}
@@ -121,6 +123,7 @@
 <script>
 (function () {
   const createOrderUrl = "{% url 'razorpay_create_order' %}";
+  var prefillContact = "{{ razorpay_prefill_contact|escapejs }}";
   function getCsrfToken() {
     const el = document.querySelector('#csrf-hidden-form input[name=csrfmiddlewaretoken]');
     return el ? el.value : '';
@@ -147,31 +150,52 @@
             return;
           }
           const d = res.data;
+          var prefill = {
+            name: "{{ request.user.get_full_name|default:request.user.email|escapejs }}",
+            email: "{{ request.user.email|escapejs }}"
+          };
+          if (prefillContact) {
+            prefill.contact = prefillContact;
+          }
           var returnPath = "{% url 'razorpay_payment_return' 888888888 %}".replace(/888888888/g, String(d.invoice_id));
-          var callback_url = window.location.origin + returnPath;
-          // redirect:true — success ke baad browser wapas aata hai; Edge pop-up / about:blank 3DS issue kam hota hai.
+          // redirect:true + callback_url: card 3DS / mock bank same-window flow (Edge par about:blank pop-up kam).
+          // ?rt= server-signed token — Razorpay POST par session cookie na aaye tab bhi return URL safe rahe.
+          var callback_url = window.location.origin + returnPath + '?rt=' + encodeURIComponent(d.return_token);
           const options = {
             key: d.key_id,
+            amount: String(d.amount),
+            currency: d.currency,
             order_id: d.order_id,
             name: 'TimeTrack',
             description: 'Invoice #' + d.invoice_id,
             callback_url: callback_url,
             redirect: true,
-            prefill: {
-              name: "{{ request.user.get_full_name|default:request.user.email|escapejs }}",
-              email: "{{ request.user.email|escapejs }}"
-            },
+            prefill: prefill,
             theme: { color: '#4f46e5' },
             modal: {
               ondismiss: function () { btn.disabled = false; }
             }
           };
+          if (prefillContact) {
+            options.method = 'card';
+          }
           const rzp = new Razorpay(options);
           rzp.on('payment.failed', function (resp) {
             btn.disabled = false;
             var err = (resp && resp.error) ? resp.error : {};
-            var msg = err.description || err.reason || err.code || 'Card/UPI payment failed';
-            alert(msg);
+            console.error('Razorpay payment.failed', resp);
+            var parts = [
+              err.description || err.reason || err.code || 'Card/UPI payment failed',
+              err.code ? ('code: ' + err.code) : '',
+              err.source ? ('source: ' + err.source) : '',
+              err.step ? ('step: ' + err.step) : ''
+            ];
+            if (err.metadata && typeof err.metadata === 'object') {
+              try {
+                parts.push('metadata: ' + JSON.stringify(err.metadata));
+              } catch (e) { /* ignore */ }
+            }
+            alert(parts.filter(Boolean).join('\n'));
           });
           rzp.open();
         })

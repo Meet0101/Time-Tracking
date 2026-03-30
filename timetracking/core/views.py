@@ -12,6 +12,7 @@ from email.mime.image import MIMEImage
 from pathlib import Path
 
 from django.conf import settings
+from django.core import signing
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
@@ -36,7 +37,8 @@ from .forms import (
     SignupForm,
     TaskForm,
 )
-from .models import Invoice, Module, Notification, Project, Task, TimeLog, User
+from .models import Invoice, Module, Notification, Project, Task, Team, TimeLog, User
+from .access import is_superadmin, projects_qs_for, tasks_qs_for
 
 
 OTP_SESSION_KEY = "email_otp"
@@ -83,6 +85,38 @@ def _razorpay_verify_signature(order_id: str, payment_id: str, signature: str) -
     secret = (settings.RAZORPAY_KEY_SECRET or "").encode()
     expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+RAZORPAY_RETURN_TOKEN_SALT = "timetrack.razorpay.return"
+RAZORPAY_RETURN_TOKEN_MAX_AGE = 7200
+
+
+def _razorpay_sign_return_token(user_id: int, invoice_id: int, order_id: str) -> str:
+    return signing.dumps(
+        {"u": user_id, "i": invoice_id, "o": order_id},
+        salt=RAZORPAY_RETURN_TOKEN_SALT,
+    )
+
+
+def _razorpay_parse_return_token(token: str) -> dict | None:
+    try:
+        return signing.loads(
+            token,
+            salt=RAZORPAY_RETURN_TOKEN_SALT,
+            max_age=RAZORPAY_RETURN_TOKEN_MAX_AGE,
+        )
+    except (signing.BadSignature, signing.SignatureExpired):
+        return None
+
+
+def _razorpay_return_token_payload(request, invoice: Invoice) -> dict | None:
+    rt = request.GET.get("rt")
+    if not rt:
+        return None
+    data = _razorpay_parse_return_token(rt)
+    if not data or data.get("i") != invoice.id:
+        return None
+    return data
 
 
 def _razorpay_try_mark_invoice_paid(invoice, razorpay_order_id: str, razorpay_payment_id: str, razorpay_signature: str):
@@ -212,8 +246,15 @@ def _send_welcome_email(to_email: str):
         pass
 
 
-def _notify_admins_and_managers(message: str, exclude_user_id=None, redirect_url=""):
+def _notify_admins_and_managers(
+    message: str,
+    exclude_user_id=None,
+    redirect_url="",
+    team_id=None,
+):
     recipients = User.objects.filter(role__in=["admin", "manager"], status="active")
+    if team_id is not None:
+        recipients = recipients.filter(team_id=team_id)
     if exclude_user_id:
         recipients = recipients.exclude(id=exclude_user_id)
     notifications = [
@@ -344,6 +385,7 @@ def signup(request):
             user = form.save(commit=False)
             user.set_password(form.cleaned_data['password'])
             user.role = form.cleaned_data["role"]
+            user.team = form.cleaned_data["team"]
             user.status = "inactive"
             user.save()
             otp = _generate_otp()
@@ -365,15 +407,14 @@ def signup(request):
 @login_required
 def dashboard(request):
     # Developers: personal stats. Admin/Manager: org-wide totals (matches Projects/Reports view).
-    is_lead = request.user.role in ("admin", "manager")
-    if is_lead:
-        user_tasks_qs = Task.objects.all()
-        projects_count = Project.objects.count()
-        time_log_filter = {"approval_status": "approved"}
-    else:
-        user_tasks_qs = Task.objects.filter(assigned_to=request.user)
-        projects_count = Project.objects.filter(modules__tasks__assigned_to=request.user).distinct().count()
-        time_log_filter = {"user": request.user, "approval_status": "approved"}
+    is_lead = request.user.role in ("admin", "manager") or is_superadmin(request.user)
+    user_tasks_qs = tasks_qs_for(request.user)
+    projects_count = projects_qs_for(request.user).count()
+    time_log_filter = {"approval_status": "approved"}
+    if not is_lead:
+        time_log_filter["user"] = request.user
+    elif not is_superadmin(request.user):
+        time_log_filter["task__module__project__team_id"] = request.user.team_id
 
     active_tasks = user_tasks_qs.filter(status='in_progress').count()
     pending_tasks = user_tasks_qs.filter(status='todo').count()
@@ -400,6 +441,8 @@ def dashboard(request):
     )
     if not is_lead:
         daily_qs_base = daily_qs_base.filter(user=request.user)
+    elif not is_superadmin(request.user):
+        daily_qs_base = daily_qs_base.filter(task__module__project__team_id=request.user.team_id)
     daily_qs = (
         daily_qs_base.annotate(day=TruncDate('start_time'))
         .values('day')
@@ -431,11 +474,11 @@ def dashboard(request):
 
 @login_required
 def projects(request):
-    can_manage = request.user.role in ['admin', 'manager']
+    can_manage = request.user.role in ['admin', 'manager'] or is_superadmin(request.user)
     focused_project_id = request.GET.get("project_id")
 
     projects_list = (
-        Project.objects.all()
+        projects_qs_for(request.user)
         .prefetch_related('modules')
         .annotate(
             total_tasks=Count("modules__tasks"),
@@ -453,7 +496,7 @@ def projects(request):
     edit_project = None
     edit_project_form = None
     if request.method == 'GET' and can_manage and request.GET.get('edit'):
-        edit_project = get_object_or_404(Project, id=request.GET.get('edit'))
+        edit_project = get_object_or_404(projects_qs_for(request.user), id=request.GET.get('edit'))
         edit_project_form = ProjectForm(instance=edit_project)
 
     create_project_form = ProjectForm()
@@ -471,13 +514,18 @@ def projects(request):
             if create_project_form.is_valid():
                 project = create_project_form.save(commit=False)
                 project.created_by = request.user
+                # Project.team is required; never access project.team before it is set (can raise RelatedObjectDoesNotExist).
+                team = request.user.team
+                if team is None:
+                    team = Team.objects.filter(code="default-team").first()
+                project.team = team
                 project.save()
                 messages.success(request, "Project created successfully.")
                 return redirect('projects')
 
         elif action == 'update_project':
             project_id = request.POST.get('project_id')
-            edit_project = get_object_or_404(Project, id=project_id)
+            edit_project = get_object_or_404(projects_qs_for(request.user), id=project_id)
             edit_project_form = ProjectForm(request.POST, instance=edit_project)
             if edit_project_form.is_valid():
                 edit_project_form.save()
@@ -486,7 +534,7 @@ def projects(request):
 
         elif action == 'delete_project':
             project_id = request.POST.get('project_id')
-            project = get_object_or_404(Project, id=project_id)
+            project = get_object_or_404(projects_qs_for(request.user), id=project_id)
             project.delete()
             messages.success(request, "Project deleted successfully.")
             return redirect('projects')
@@ -494,7 +542,12 @@ def projects(request):
         elif action == 'create_module':
             module_form = ModuleForm(request.POST)
             if module_form.is_valid():
-                module_form.save()
+                mod = module_form.save(commit=False)
+                # Prevent cross-team module attach.
+                if not is_superadmin(request.user) and mod.project.team_id != request.user.team_id:
+                    messages.error(request, "You don't have permission to add modules to that project.")
+                    return redirect("projects")
+                mod.save()
                 messages.success(request, "Module created successfully.")
                 return redirect('projects')
 
@@ -510,10 +563,92 @@ def projects(request):
 
 
 @login_required
+def teams(request):
+    if not is_superadmin(request.user):
+        messages.error(request, "You don't have permission.")
+        return redirect("dashboard")
+
+    if request.method == "POST":
+        action = request.POST.get("action") or ""
+        if action == "create":
+            name = (request.POST.get("name") or "").strip()
+            code = (request.POST.get("code") or "").strip()
+            if not name or not code:
+                messages.error(request, "Team name and code are required.")
+                return redirect("teams")
+            if Team.objects.filter(code=code).exists():
+                messages.error(request, "Team code already exists.")
+                return redirect("teams")
+            Team.objects.create(name=name, code=code, created_by=request.user)
+            messages.success(request, "Team created.")
+            return redirect("teams")
+        if action == "delete":
+            team_id = request.POST.get("team_id")
+            team = get_object_or_404(Team, id=team_id)
+            if team.members.exists() or team.projects.exists():
+                messages.error(request, "Team has members/projects. Move them first.")
+                return redirect("teams")
+            team.delete()
+            messages.success(request, "Team deleted.")
+            return redirect("teams")
+
+    teams_qs = Team.objects.prefetch_related("members", "projects").order_by("name")
+    return render(request, "core/teams.html", {"teams": teams_qs})
+
+
+@login_required
+def team_detail(request, team_id):
+    if not is_superadmin(request.user):
+        messages.error(request, "You don't have permission.")
+        return redirect("dashboard")
+
+    team = get_object_or_404(Team, id=team_id)
+    if request.method == "POST":
+        action = request.POST.get("action") or ""
+        if action == "move_user":
+            user_id = request.POST.get("user_id")
+            target_team_id = request.POST.get("target_team_id")
+            u = get_object_or_404(User, id=user_id)
+            target = get_object_or_404(Team, id=target_team_id)
+            u.team = target
+            u.save(update_fields=["team"])
+            messages.success(request, f"Moved {u.email} to {target.name}.")
+            return redirect("team_detail", team_id=team.id)
+        if action == "rename":
+            name = (request.POST.get("name") or "").strip()
+            code = (request.POST.get("code") or "").strip()
+            if not name or not code:
+                messages.error(request, "Name and code are required.")
+                return redirect("team_detail", team_id=team.id)
+            if Team.objects.exclude(id=team.id).filter(code=code).exists():
+                messages.error(request, "Team code already exists.")
+                return redirect("team_detail", team_id=team.id)
+            team.name = name
+            team.code = code
+            team.save(update_fields=["name", "code"])
+            messages.success(request, "Team updated.")
+            return redirect("team_detail", team_id=team.id)
+
+    members = User.objects.filter(team=team).order_by("role", "email")
+    projects = Project.objects.filter(team=team).order_by("-created_at")
+    other_teams = Team.objects.exclude(id=team.id).order_by("name")
+    return render(
+        request,
+        "core/team_detail.html",
+        {"team": team, "members": members, "projects": projects, "other_teams": other_teams},
+    )
+
+
+@login_required
 def project_detail(request, project_id):
-    project = get_object_or_404(Project.objects.select_related("created_by"), id=project_id)
-    tasks_qs = Task.objects.filter(module__project=project).select_related("assigned_to", "module")
+    project = get_object_or_404(
+        projects_qs_for(request.user).select_related("created_by"),
+        id=project_id,
+    )
+    tasks_qs = tasks_qs_for(request.user).filter(module__project=project)
     logs_qs = TimeLog.objects.filter(task__module__project=project, approval_status="approved")
+    if not is_superadmin(request.user):
+        logs_qs = logs_qs.filter(task__module__project__team_id=request.user.team_id)
     today = timezone.now().date()
 
     total_tasks = tasks_qs.count()
@@ -562,27 +697,44 @@ def project_detail(request, project_id):
 def _apply_task_form_querysets(form, request, can_assign):
     """Developers + active users in assign list; avoid empty queryset when no devs yet."""
     if can_assign:
-        assign_qs = User.objects.filter(status="active").filter(Q(role="developer") | Q(pk=request.user.pk)).distinct()
+        assign_qs = (
+            User.objects.filter(status="active")
+            .filter(Q(role="developer") | Q(pk=request.user.pk))
+            .filter(team_id=request.user.team_id)
+            .distinct()
+        )
         form.fields["assigned_to"].queryset = assign_qs
         form.fields["assigned_to"].required = False
     else:
         form.fields["assigned_to"].queryset = User.objects.filter(id=request.user.id)
         form.fields["assigned_to"].required = True
-    form.fields["module"].queryset = Module.objects.select_related("project").order_by("project__name", "name")
+    if is_superadmin(request.user):
+        mod_qs = Module.objects.select_related("project").order_by("project__name", "name")
+    else:
+        mod_qs = Module.objects.select_related("project").filter(project__team_id=request.user.team_id).order_by("project__name", "name")
+    form.fields["module"].queryset = mod_qs
     form.fields["module"].empty_label = "Select project module"
 
 
 def _create_quick_task_for_user(user, title: str) -> Task:
     """Ad-hoc task in the user's personal workspace (manual log, live timer)."""
     title = (title or "").strip()
+    # Superadmin / newly created users might not have team set yet; fall back safely.
+    team = user.team
+    if team is None:
+        team = Team.objects.filter(code="default-team").first()
     personal_project, _ = Project.objects.get_or_create(
         name=f"{user.email} Personal Workspace",
         created_by=user,
         defaults={
             "description": "Auto-created personal project for time entries.",
             "start_date": timezone.now().date(),
+            "team": team,
         },
     )
+    if personal_project.team_id is None:
+        personal_project.team = team
+        personal_project.save(update_fields=["team"])
     personal_module, _ = Module.objects.get_or_create(
         project=personal_project,
         name="General",
@@ -599,14 +751,11 @@ def _create_quick_task_for_user(user, title: str) -> Task:
 
 @login_required
 def tasks(request):
-    can_assign = request.user.role in ["admin", "manager"]
+    can_assign = request.user.role in ["admin", "manager"] or is_superadmin(request.user)
     selected_project_id = request.GET.get("project")
     selected_task_id = request.GET.get("task")
     selected_status = request.GET.get("status")
-    if can_assign:
-        tasks_list = Task.objects.select_related("module__project", "assigned_to").all()
-    else:
-        tasks_list = Task.objects.select_related("module__project", "assigned_to").filter(assigned_to=request.user)
+    tasks_list = tasks_qs_for(request.user)
     if selected_project_id and selected_project_id.isdigit():
         tasks_list = tasks_list.filter(module__project_id=int(selected_project_id))
     if selected_status in {"todo", "in_progress", "done"}:
@@ -617,8 +766,36 @@ def tasks(request):
     done_tasks = tasks_list.filter(status='done')
 
     open_new_task_modal = False
+    open_edit_task_modal = False
     modules_exist = Module.objects.exists()
     tasks_querysuffix = ("?" + request.GET.urlencode()) if request.GET else ""
+
+    # Forms: separate create/edit to avoid DOM id collisions.
+    edit_form = TaskForm(prefix="edit")
+    _apply_task_form_querysets(edit_form, request, can_assign)
+
+    if request.method == "POST" and request.POST.get("delete_task"):
+        task_id = request.POST.get("task_id")
+        task = get_object_or_404(tasks_qs_for(request.user), id=task_id)
+        task.delete()
+        messages.success(request, "Task deleted.")
+        return redirect(f"{reverse('tasks')}{tasks_querysuffix}")
+
+    if request.method == "POST" and request.POST.get("update_task"):
+        task_id = request.POST.get("task_id")
+        task = get_object_or_404(tasks_qs_for(request.user), id=task_id)
+        edit_form = TaskForm(request.POST, instance=task, prefix="edit")
+        _apply_task_form_querysets(edit_form, request, can_assign)
+        if edit_form.is_valid():
+            updated = edit_form.save(commit=False)
+            if not can_assign:
+                updated.assigned_to = request.user
+            elif not updated.assigned_to_id:
+                updated.assigned_to = request.user
+            updated.save()
+            messages.success(request, "Task updated.")
+            return redirect(f"{reverse('tasks')}{tasks_querysuffix}")
+        open_edit_task_modal = True
 
     if request.method == "POST" and request.POST.get("create_task"):
         form = TaskForm(request.POST)
@@ -651,8 +828,10 @@ def tasks(request):
         'in_progress': in_progress_tasks,
         'done': done_tasks,
         'form': form,
+        'edit_form': edit_form,
         'can_assign': can_assign,
         'open_new_task_modal': open_new_task_modal,
+        'open_edit_task_modal': open_edit_task_modal,
         'modules_exist': modules_exist,
         'tasks_querysuffix': tasks_querysuffix,
         'selected_project_id': int(selected_project_id) if selected_project_id and selected_project_id.isdigit() else None,
@@ -670,12 +849,16 @@ def tracking(request):
 
     manual_form = ManualTimeEntryForm(tasks_qs=manual_tasks)
 
-    can_approve = request.user.role in ["admin", "manager"]
-    pending_manual_logs = (
-        TimeLog.objects.select_related("task", "user")
-        .filter(entry_type="manual", approval_status="pending")
-        .order_by("-start_time")
-    ) if can_approve else TimeLog.objects.none()
+    can_approve = request.user.role in ["admin", "manager"] or is_superadmin(request.user)
+    pending_manual_logs_qs = TimeLog.objects.select_related("task", "user").filter(
+        entry_type="manual",
+        approval_status="pending",
+    )
+    if can_approve and not is_superadmin(request.user):
+        pending_manual_logs_qs = pending_manual_logs_qs.filter(
+            task__module__project__team_id=request.user.team_id
+        )
+    pending_manual_logs = pending_manual_logs_qs.order_by("-start_time") if can_approve else TimeLog.objects.none()
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -710,12 +893,21 @@ def tracking(request):
                         f"Manual time log approval required: {log.user.email} - {log.task.title}",
                         exclude_user_id=request.user.id,
                         redirect_url=reverse("tracking"),
+                        team_id=log.task.module.project.team_id,
                     )
                     messages.success(request, "Manual time log submitted for approval.")
                     return redirect('tracking')
         elif action in ["approve_manual", "reject_manual"] and can_approve:
             log_id = request.POST.get("log_id")
-            log = get_object_or_404(TimeLog, id=log_id, entry_type="manual")
+            if is_superadmin(request.user):
+                log = get_object_or_404(TimeLog, id=log_id, entry_type="manual")
+            else:
+                log = get_object_or_404(
+                    TimeLog,
+                    id=log_id,
+                    entry_type="manual",
+                    task__module__project__team_id=request.user.team_id,
+                )
             note = (request.POST.get("approval_note") or "").strip()
             log.approval_status = "approved" if action == "approve_manual" else "rejected"
             log.approved_by = request.user
@@ -745,11 +937,11 @@ def reports(request):
     today = timezone.now().date()
 
     if request.user.role == "developer":
-        tasks_qs = Task.objects.filter(assigned_to=request.user)
+        tasks_qs = tasks_qs_for(request.user)
         time_logs = TimeLog.objects.filter(user=request.user, approval_status="approved")
         user_time = time_logs.values("user__email").annotate(total_seconds=Sum("total_time")).order_by("-total_seconds")[:10]
 
-        projects_progress = Project.objects.annotate(
+        projects_progress = projects_qs_for(request.user).annotate(
             total=Count("modules__tasks", filter=Q(modules__tasks__assigned_to=request.user)),
             done=Count(
                 "modules__tasks",
@@ -758,11 +950,14 @@ def reports(request):
             members=Count("modules__tasks__assigned_to", distinct=True, filter=Q(modules__tasks__assigned_to=request.user)),
         )
     else:
-        tasks_qs = Task.objects.all()
+        tasks_qs = tasks_qs_for(request.user)
         # Time spent per user (top 10)
-        user_time = TimeLog.objects.filter(approval_status="approved").values("user__email").annotate(total_seconds=Sum("total_time")).order_by("-total_seconds")[:10]
+        time_logs = TimeLog.objects.filter(approval_status="approved")
+        if not is_superadmin(request.user):
+            time_logs = time_logs.filter(task__module__project__team_id=request.user.team_id)
+        user_time = time_logs.values("user__email").annotate(total_seconds=Sum("total_time")).order_by("-total_seconds")[:10]
 
-        projects_progress = Project.objects.annotate(
+        projects_progress = projects_qs_for(request.user).annotate(
             total=Count("modules__tasks"),
             done=Count("modules__tasks", filter=Q(modules__tasks__status="done")),
             members=Count("modules__tasks__assigned_to", distinct=True),
@@ -820,7 +1015,7 @@ def enhancements(request):
     ]
     today = timezone.now().date()
     risk_rows = []
-    for project in Project.objects.all().order_by("name"):
+    for project in projects_qs_for(request.user).order_by("name"):
         project_tasks = Task.objects.filter(module__project=project)
         total_tasks = project_tasks.count()
         done_tasks = project_tasks.filter(status="done").count()
@@ -878,7 +1073,7 @@ def enhancements(request):
     planned_daily_hours = request.GET.get("daily_hours", "6")
     simulator = None
     if sim_project_id and sim_project_id.isdigit():
-        sim_project = Project.objects.filter(id=int(sim_project_id)).first()
+        sim_project = projects_qs_for(request.user).filter(id=int(sim_project_id)).first()
         if sim_project:
             sim_tasks = Task.objects.filter(module__project=sim_project)
             remaining_tasks = sim_tasks.exclude(status="done").count()
@@ -911,7 +1106,7 @@ def enhancements(request):
             "implemented_items": implemented_items,
             "working_features": working_features,
             "risk_rows": risk_rows,
-            "projects": Project.objects.all().order_by("name"),
+            "projects": projects_qs_for(request.user).order_by("name"),
             "simulator": simulator,
             "sim_project_id": int(sim_project_id) if sim_project_id and sim_project_id.isdigit() else None,
             "planned_daily_hours": planned_daily_hours,
@@ -921,39 +1116,52 @@ def enhancements(request):
 
 @login_required
 def data_health(request):
-    if request.user.role not in ["admin", "manager"]:
+    if request.user.role not in ["admin", "manager"] and not is_superadmin(request.user):
         messages.error(request, "You don't have permission to access Data QA.")
         return redirect("dashboard")
 
     today = timezone.now().date()
-    users_total = User.objects.count()
-    users_by_role = dict(User.objects.values("role").annotate(c=Count("id")).values_list("role", "c"))
-    users_active = User.objects.filter(status="active").count()
-    users_inactive = User.objects.exclude(status="active").count()
+    users_qs = User.objects.all()
+    if not is_superadmin(request.user):
+        users_qs = users_qs.filter(team_id=request.user.team_id)
+    users_total = users_qs.count()
+    users_by_role = dict(users_qs.values("role").annotate(c=Count("id")).values_list("role", "c"))
+    users_active = users_qs.filter(status="active").count()
+    users_inactive = users_qs.exclude(status="active").count()
 
-    projects_count = Project.objects.count()
-    modules_count = Module.objects.count()
+    projects_qs = projects_qs_for(request.user)
+    projects_count = projects_qs.count()
+    modules_qs = Module.objects.filter(project__in=projects_qs)
+    modules_count = modules_qs.count()
 
-    task_status_rows = Task.objects.values("status").annotate(n=Count("id")).order_by("status")
+    task_status_rows = tasks_qs_for(request.user).values("status").annotate(n=Count("id")).order_by("status")
     task_status_map = {row["status"]: row["n"] for row in task_status_rows}
     tasks_total = sum(task_status_map.values())
 
-    overdue_tasks = Task.objects.filter(deadline__lt=today).exclude(status="done").count()
-    unassigned_tasks = Task.objects.filter(assigned_to__isnull=True).count()
+    overdue_tasks = tasks_qs_for(request.user).filter(deadline__lt=today).exclude(status="done").count()
+    unassigned_tasks = tasks_qs_for(request.user).filter(assigned_to__isnull=True).count()
 
-    log_approval_rows = TimeLog.objects.values("approval_status").annotate(n=Count("id"))
+    logs_qs = TimeLog.objects.all()
+    if not is_superadmin(request.user):
+        logs_qs = logs_qs.filter(task__module__project__team_id=request.user.team_id)
+    log_approval_rows = logs_qs.values("approval_status").annotate(n=Count("id"))
     log_approval_map = {row["approval_status"]: row["n"] for row in log_approval_rows}
-    logs_total = TimeLog.objects.count()
-    logs_auto = TimeLog.objects.filter(entry_type="auto").count()
-    logs_manual = TimeLog.objects.filter(entry_type="manual").count()
-    active_timers = TimeLog.objects.filter(end_time__isnull=True).count()
+    logs_total = logs_qs.count()
+    logs_auto = logs_qs.filter(entry_type="auto").count()
+    logs_manual = logs_qs.filter(entry_type="manual").count()
+    active_timers = logs_qs.filter(end_time__isnull=True).count()
 
-    approved_td = TimeLog.objects.filter(approval_status="approved").aggregate(t=Sum("total_time"))["t"]
+    approved_td = logs_qs.filter(approval_status="approved").aggregate(t=Sum("total_time"))["t"]
     approved_hours_global = round(approved_td.total_seconds() / 3600, 2) if approved_td else 0.0
 
-    invoices_count = Invoice.objects.count()
-    notif_total = Notification.objects.count()
-    notif_unread = Notification.objects.filter(is_read=False).count()
+    invoices_qs = Invoice.objects.all()
+    notif_qs = Notification.objects.all()
+    if not is_superadmin(request.user):
+        invoices_qs = invoices_qs.filter(user__team_id=request.user.team_id)
+        notif_qs = notif_qs.filter(user__team_id=request.user.team_id)
+    invoices_count = invoices_qs.count()
+    notif_total = notif_qs.count()
+    notif_unread = notif_qs.filter(is_read=False).count()
 
     checks = []
     checks.append(
@@ -974,7 +1182,7 @@ def data_health(request):
     )
     checks.append(
         {
-            "ok": active_timers <= User.objects.filter(role="developer", status="active").count(),
+            "ok": active_timers <= users_qs.filter(role="developer", status="active").count(),
             "severity": "info",
             "label": "Active timers (running)",
             "detail": f"{active_timers} open time session(s).",
@@ -1022,10 +1230,13 @@ def data_health(request):
 @login_required
 @ensure_csrf_cookie
 def billing(request):
-    if request.user.role not in ["admin", "manager"]:
+    if not (request.user.role in ["admin", "manager"] or request.user.is_superuser):
         messages.error(request, "You don't have permission to access billing.")
         return redirect("dashboard")
-    invoices = Invoice.objects.filter(user=request.user)
+    if request.user.is_superuser:
+        invoices = Invoice.objects.all()
+    else:
+        invoices = Invoice.objects.filter(user__team_id=request.user.team_id)
     # Mocking hours for invoice generation demo
     total_hours_duration = TimeLog.objects.filter(
         user=request.user,
@@ -1069,14 +1280,18 @@ def billing(request):
         'razorpay_enabled': _razorpay_configured(),
         'razorpay_key_id': getattr(settings, "RAZORPAY_KEY_ID", "") or "",
         'razorpay_currency': getattr(settings, "RAZORPAY_CURRENCY", "INR") or "INR",
+        'razorpay_prefill_contact': getattr(settings, "RAZORPAY_PREFILL_CONTACT", "") or "",
     })
 
 @login_required
 def print_invoice(request, invoice_id):
-    if request.user.role not in ["admin", "manager"]:
+    if not (request.user.role in ["admin", "manager"] or request.user.is_superuser):
         messages.error(request, "You don't have permission to print invoices.")
         return redirect("dashboard")
-    invoice = get_object_or_404(Invoice, id=invoice_id, user=request.user)
+    if request.user.is_superuser:
+        invoice = get_object_or_404(Invoice, id=invoice_id)
+    else:
+        invoice = get_object_or_404(Invoice, id=invoice_id, user__team_id=request.user.team_id)
     th = float(invoice.total_hours) if invoice.total_hours else 0.0
     if th > 0:
         hourly_rate = round(float(invoice.amount) / th, 2)
@@ -1087,7 +1302,7 @@ def print_invoice(request, invoice_id):
 @login_required
 @require_POST
 def razorpay_create_order(request):
-    if request.user.role not in ["admin", "manager"]:
+    if not (request.user.role in ["admin", "manager"] or request.user.is_superuser):
         return JsonResponse({"error": "Forbidden"}, status=403)
     if not _razorpay_configured():
         return JsonResponse({"error": "Razorpay not configured — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env"}, status=503)
@@ -1098,7 +1313,10 @@ def razorpay_create_order(request):
     invoice_id = payload.get("invoice_id")
     if not invoice_id:
         return JsonResponse({"error": "invoice_id required"}, status=400)
-    invoice = get_object_or_404(Invoice, id=invoice_id, user=request.user)
+    if request.user.is_superuser:
+        invoice = get_object_or_404(Invoice, id=invoice_id)
+    else:
+        invoice = get_object_or_404(Invoice, id=invoice_id, user__team_id=request.user.team_id)
     if invoice.payment_status == Invoice.PAYMENT_PAID:
         return JsonResponse({"error": "Invoice already paid"}, status=400)
 
@@ -1126,8 +1344,10 @@ def razorpay_create_order(request):
         {
             "key_id": settings.RAZORPAY_KEY_ID.strip(),
             "order_id": order["id"],
+            "amount": amount_paise,
             "currency": currency,
             "invoice_id": invoice.id,
+            "return_token": _razorpay_sign_return_token(request.user.id, invoice.id, order["id"]),
         }
     )
 
@@ -1135,7 +1355,7 @@ def razorpay_create_order(request):
 @login_required
 @require_POST
 def razorpay_verify_payment(request):
-    if request.user.role not in ["admin", "manager"]:
+    if not (request.user.role in ["admin", "manager"] or request.user.is_superuser):
         return JsonResponse({"error": "Forbidden"}, status=403)
     if not _razorpay_configured():
         return JsonResponse({"error": "Razorpay not configured"}, status=503)
@@ -1151,7 +1371,10 @@ def razorpay_verify_payment(request):
     if not all([invoice_id, razorpay_order_id, razorpay_payment_id, razorpay_signature]):
         return JsonResponse({"error": "Missing payment fields"}, status=400)
 
-    invoice = get_object_or_404(Invoice, id=invoice_id, user=request.user)
+    if request.user.is_superuser:
+        invoice = get_object_or_404(Invoice, id=invoice_id)
+    else:
+        invoice = get_object_or_404(Invoice, id=invoice_id, user__team_id=request.user.team_id)
     ok, err = _razorpay_try_mark_invoice_paid(invoice, razorpay_order_id, razorpay_payment_id, razorpay_signature)
     if ok:
         return JsonResponse({"ok": True})
@@ -1170,20 +1393,23 @@ def _razorpay_callback_param(request, key: str):
 @csrf_exempt
 def razorpay_payment_return(request, invoice_id):
     """
-    After Checkout with redirect:true — Razorpay sends user back with payment params (GET or POST).
-    Pop-up / handler flow is unreliable in Edge; this path completes payment on the server.
+    Razorpay Checkout with callback_url + redirect:true — card 3DS / mock bank opens in full window
+    (avoids Edge about:blank pop-up with handler-only flow). Razorpay POSTs here; session cookie is
+    often not sent on that cross-site POST, so ?rt= signed token authorizes the invoice owner.
     """
-    if not request.user.is_authenticated:
-        messages.warning(request, "Log in to finish payment verification.")
-        return redirect(f"{reverse('login')}?next={request.path}")
-    if request.user.role not in ["admin", "manager"]:
-        messages.error(request, "You don't have permission.")
-        return redirect("billing")
     if not _razorpay_configured():
         messages.error(request, "Razorpay is not configured.")
         return redirect("billing")
 
-    invoice = get_object_or_404(Invoice, id=invoice_id, user=request.user)
+    invoice = get_object_or_404(Invoice, id=invoice_id)
+    token_payload = _razorpay_return_token_payload(request, invoice)
+    authed_owner = request.user.is_authenticated and invoice.user_id == request.user.id
+    if not authed_owner and not token_payload:
+        if request.user.is_authenticated:
+            messages.error(request, "You don't have permission.")
+            return redirect("billing")
+        messages.warning(request, "Payment return link is invalid or expired. Open Billing and try Pay again.")
+        return redirect("billing")
 
     err_code = _razorpay_callback_param(request, "error[code]") or _razorpay_callback_param(request, "error_code")
     err_desc = _razorpay_callback_param(request, "error[description]") or _razorpay_callback_param(
@@ -1201,6 +1427,10 @@ def razorpay_payment_return(request, invoice_id):
 
     if not all([payment_id, order_id, signature]):
         messages.warning(request, "Payment was cancelled or did not complete.")
+        return redirect("billing")
+
+    if token_payload and token_payload.get("o") != order_id:
+        messages.error(request, "Payment session does not match this invoice. Start again from Billing.")
         return redirect("billing")
 
     ok, err = _razorpay_try_mark_invoice_paid(invoice, order_id, payment_id, signature)
@@ -1415,9 +1645,7 @@ def api_timer_start(request):
 
     task = None
     if task_id:
-        task_qs = Task.objects.all()
-        if request.user.role == "developer":
-            task_qs = task_qs.filter(assigned_to=request.user)
+        task_qs = tasks_qs_for(request.user)
         task = get_object_or_404(task_qs, id=task_id)
     elif custom_title:
         task = _create_quick_task_for_user(request.user, custom_title)
@@ -1453,9 +1681,7 @@ def api_timer_stop(request):
 def api_task_update_status(request):
     task_id = request.POST.get('task_id')
     new_status = request.POST.get('status')
-    task_qs = Task.objects.all()
-    if request.user.role == 'developer':
-        task_qs = task_qs.filter(assigned_to=request.user)
+    task_qs = tasks_qs_for(request.user)
     task = get_object_or_404(task_qs, id=task_id)
 
     valid_statuses = {choice[0] for choice in Task.STATUS_CHOICES}
@@ -1480,5 +1706,6 @@ def api_idle_ping(request):
             f"Idle warning: {request.user.email} inactive for {idle_minutes} minutes on {active_log.task.title}.",
             exclude_user_id=request.user.id,
             redirect_url=reverse("tracking"),
+            team_id=active_log.task.module.project.team_id,
         )
     return JsonResponse({"status": "ok"})

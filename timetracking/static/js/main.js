@@ -273,6 +273,18 @@ $(document).ready(function () {
 
         $("#taskModalStatus").val($card.data("status") || "todo");
         $("#taskModalSaveStatus").data("task-id", taskId);
+        $("#taskModalEdit").data("task-id", taskId);
+        $("#taskModalDelete").data("task-id", taskId);
+
+        // Keep raw values for edit modal fill.
+        $("#taskModalEdit")
+            .data("title", $card.data("title") || "")
+            .data("desc", $card.data("desc-full") || ($card.data("desc") || ""))
+            .data("status", $card.data("status") || "todo")
+            .data("priority", $card.data("priority") || "medium")
+            .data("deadline", $card.data("deadline") || "")
+            .data("moduleId", $card.data("module-id") || "")
+            .data("assignedToId", $card.data("assigned-to-id") || "");
 
         const modalEl = document.getElementById("taskDetailModal");
         if (modalEl) {
@@ -308,6 +320,42 @@ $(document).ready(function () {
                 showAppToast("Update failed!", "danger");
             }
         });
+    });
+
+    // Edit task (opens server-rendered form modal with prefix edit-*)
+    $("#taskModalEdit").click(function() {
+        const taskId = $(this).data("task-id");
+        if (!taskId) return;
+        $("#editTaskId").val(taskId);
+
+        // The edit form fields are rendered with prefix "edit"
+        $("#id_edit-title").val($(this).data("title") || "");
+        $("#id_edit-description").val($(this).data("desc") || "");
+        $("#id_edit-status").val($(this).data("status") || "todo");
+        $("#id_edit-priority").val($(this).data("priority") || "medium");
+        $("#id_edit-deadline").val($(this).data("deadline") || "");
+        const mod = $(this).data("moduleId");
+        if (mod) $("#id_edit-module").val(String(mod));
+        const assignee = $(this).data("assignedToId");
+        if (assignee !== undefined && assignee !== null && assignee !== "") {
+            $("#id_edit-assigned_to").val(String(assignee));
+        }
+
+        const modalEl = document.getElementById("editTaskModal");
+        if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+    });
+
+    // Delete task
+    $("#taskModalDelete").click(function() {
+        const taskId = $(this).data("task-id");
+        if (!taskId) return;
+        if (!confirm("Delete this task? This will also remove its time logs.")) return;
+        $("#deleteTaskId").val(taskId);
+        const form = document.getElementById("deleteTaskForm");
+        if (form) form.submit();
     });
 
     // Direct task open via query param (?task=ID)

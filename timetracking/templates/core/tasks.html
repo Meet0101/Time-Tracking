@@ -71,10 +71,13 @@
                  data-status="{{ task.status }}"
                  data-title="{{ task.title }}"
                  data-priority="{{ task.priority }}"
+                 data-module-id="{{ task.module.id }}"
+                 data-assigned-to-id="{% if task.assigned_to_id %}{{ task.assigned_to_id }}{% endif %}"
                  data-deadline="{% if task.deadline %}{{ task.deadline|date:'Y-m-d' }}{% endif %}"
                  data-project="{{ task.module.project.name }}"
                  data-project-url="{% url 'project_detail' task.module.project.id %}"
-                 data-desc="{{ task.description|default:''|truncatechars:140 }}">
+                 data-desc="{{ task.description|default:''|truncatechars:140 }}"
+                 data-desc-full="{{ task.description|default:''|escapejs }}">
                 <div class="d-flex justify-content-between mb-3 align-items-center">
                    <span class="badge {% if task.priority == 'high' %}bg-danger text-white{% elif task.priority == 'medium' %}bg-warning text-dark{% else %}bg-success text-white{% endif %} rounded-pill px-3 py-1 fw-bold text-uppercase small" style="font-size: 0.75rem;">{{ task.priority }}</span>
                    <div class="text-secondary small fw-bold"> <i class="fas fa-history text-muted"></i> {{ task.created_at|timesince }} ago </div>
@@ -107,10 +110,13 @@
                  data-status="{{ task.status }}"
                  data-title="{{ task.title }}"
                  data-priority="{{ task.priority }}"
+                 data-module-id="{{ task.module.id }}"
+                 data-assigned-to-id="{% if task.assigned_to_id %}{{ task.assigned_to_id }}{% endif %}"
                  data-deadline="{% if task.deadline %}{{ task.deadline|date:'Y-m-d' }}{% endif %}"
                  data-project="{{ task.module.project.name }}"
                  data-project-url="{% url 'project_detail' task.module.project.id %}"
-                 data-desc="{{ task.description|default:''|truncatechars:140 }}">
+                 data-desc="{{ task.description|default:''|truncatechars:140 }}"
+                 data-desc-full="{{ task.description|default:''|escapejs }}">
                 <div class="d-flex justify-content-between mb-3 align-items-center">
                    <span class="badge {% if task.priority == 'high' %}bg-danger text-white{% elif task.priority == 'medium' %}bg-warning text-dark{% else %}bg-success text-white{% endif %} rounded-pill px-3 py-1 fw-bold text-uppercase small" style="font-size: 0.75rem;">{{ task.priority }}</span>
                 </div>
@@ -141,10 +147,13 @@
                  data-status="{{ task.status }}"
                  data-title="{{ task.title }}"
                  data-priority="{{ task.priority }}"
+                 data-module-id="{{ task.module.id }}"
+                 data-assigned-to-id="{% if task.assigned_to_id %}{{ task.assigned_to_id }}{% endif %}"
                  data-deadline="{% if task.deadline %}{{ task.deadline|date:'Y-m-d' }}{% endif %}"
                  data-project="{{ task.module.project.name }}"
                  data-project-url="{% url 'project_detail' task.module.project.id %}"
-                 data-desc="{{ task.description|default:''|truncatechars:140 }}">
+                 data-desc="{{ task.description|default:''|truncatechars:140 }}"
+                 data-desc-full="{{ task.description|default:''|escapejs }}">
                 <div class="d-flex justify-content-between mb-3 align-items-center">
                    <span class="badge bg-success text-white rounded-pill px-3 py-1 fw-bold text-uppercase small" style="font-size: 0.75rem;">{{ task.priority }}</span>
                 </div>
@@ -215,14 +224,21 @@
                     </select>
                 </div>
 
-                <div class="d-flex gap-2">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
                     <button type="button" id="taskModalSaveStatus" class="btn btn-primary rounded-pill fw-bold px-4">
                         Update Status
+                    </button>
+                    <button type="button" id="taskModalEdit" class="btn btn-outline-primary rounded-pill fw-bold px-4">
+                        Edit
+                    </button>
+                    <button type="button" id="taskModalDelete" class="btn btn-outline-danger rounded-pill fw-bold px-4">
+                        Delete
                     </button>
                     <a href="#" id="taskModalOpenProject" class="btn btn-outline-primary rounded-pill fw-bold px-4">
                         Open Project
                     </a>
-                    <button type="button" class="btn btn-outline-secondary rounded-pill fw-bold px-4" data-bs-dismiss="modal">
+                    <div class="flex-grow-1 d-none d-md-block"></div>
+                    <button type="button" class="btn btn-outline-secondary rounded-pill fw-bold px-4 ms-md-auto" data-bs-dismiss="modal">
                         Close
                     </button>
                 </div>
@@ -230,12 +246,62 @@
         </div>
     </div>
 </div>
+
+<!-- Edit Task Modal -->
+<div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-5 p-4 border-0 shadow-lg">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold"><i class="fas fa-pen-to-square text-primary me-2"></i>Edit Task</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" action="{% url 'tasks' %}{{ tasks_querysuffix }}" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="update_task" value="1">
+          <input type="hidden" name="task_id" id="editTaskId" value="">
+          {% if edit_form.errors %}
+          <div class="alert alert-danger small mb-3">
+            {% for field in edit_form %}
+              {% for err in field.errors %}<div>{{ field.label }}: {{ err }}</div>{% endfor %}
+            {% endfor %}
+            {% for err in edit_form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+          </div>
+          {% endif %}
+          {% bootstrap_form edit_form %}
+          <div class="mt-4 text-end d-flex gap-2 justify-content-end">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary rounded-pill px-5 fw-bold">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Task Form (hidden) -->
+<form method="post" action="{% url 'tasks' %}{{ tasks_querysuffix }}" id="deleteTaskForm" style="display:none;">
+  {% csrf_token %}
+  <input type="hidden" name="delete_task" value="1">
+  <input type="hidden" name="task_id" id="deleteTaskId" value="">
+</form>
 {{ selected_task_id|default_if_none:""|json_script:"selected-task-id" }}
 
 {% if open_new_task_modal %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   var el = document.getElementById("newTaskModal");
+  if (el && typeof bootstrap !== "undefined" && bootstrap.Modal) {
+    bootstrap.Modal.getOrCreateInstance(el).show();
+  }
+});
+</script>
+{% endif %}
+
+{% if open_edit_task_modal %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var el = document.getElementById("editTaskModal");
   if (el && typeof bootstrap !== "undefined" && bootstrap.Modal) {
     bootstrap.Modal.getOrCreateInstance(el).show();
   }

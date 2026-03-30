@@ -48,7 +48,7 @@
                     <a href="{% url 'reports' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'reports' %}active-link{% endif %}">
                         <i class="fas fa-chart-line me-3"></i>Reports
                     </a>
-                    {% if request.user.role == 'admin' or request.user.role == 'manager' %}
+                    {% if request.user.role == 'admin' or request.user.role == 'manager' or request.user.is_superuser %}
                     <a href="{% url 'data_health' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'data_health' %}active-link{% endif %}">
                         <i class="fas fa-heart-pulse me-3"></i>Data QA
                     </a>
@@ -56,10 +56,15 @@
                     <a href="{% url 'enhancements' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'enhancements' %}active-link{% endif %}">
                         <i class="fas fa-rocket me-3"></i>Enhancements
                     </a>
-                    {% if request.user.role == 'admin' or request.user.role == 'manager' %}
+                    {% if request.user.role == 'admin' or request.user.role == 'manager' or request.user.is_superuser %}
                         <a href="{% url 'billing' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'billing' %}active-link{% endif %}">
                             <i class="fas fa-file-invoice-dollar me-3"></i>Billing
                         </a>
+                    {% endif %}
+                    {% if request.user.is_superuser %}
+                    <a href="{% url 'teams' %}" class="list-group-item list-group-item-action bg-transparent text-white py-3 rounded-pill mb-2 {% if request.resolver_match.url_name == 'teams' or request.resolver_match.url_name == 'team_detail' %}active-link{% endif %}">
+                        <i class="fas fa-users-gear me-3"></i>Teams
+                    </a>
                     {% endif %}
                 </div>
                 <div class="list-group list-group-flush px-3 sidebar-footer">

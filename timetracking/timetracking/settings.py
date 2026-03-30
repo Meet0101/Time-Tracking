@@ -123,6 +123,8 @@ BILLING_HOURLY_RATE = float(env('BILLING_HOURLY_RATE', default='500'))
 RAZORPAY_KEY_ID = env('RAZORPAY_KEY_ID', default='')
 RAZORPAY_KEY_SECRET = env('RAZORPAY_KEY_SECRET', default='')
 RAZORPAY_CURRENCY = env('RAZORPAY_CURRENCY', default='INR')
+# Indian checkout: real +91 number helps card/netbanking in test/live (e.g. +919876543210)
+RAZORPAY_PREFILL_CONTACT = (env('RAZORPAY_PREFILL_CONTACT', default='') or '').strip()
 
 # DEBUG me auto superuser creation (internship/demo convenience)
 AUTO_SUPERUSER_EMAIL = env('AUTO_SUPERUSER_EMAIL', default='pmeet5010@gmail.com')

@@ -1,5 +1,5 @@
 from django import forms
-from .models import User, Project, Module, Task, TimeLog
+from .models import User, Project, Module, Task, TimeLog, Team
 
 
 class ProjectForm(forms.ModelForm):
@@ -33,13 +33,18 @@ class SignupForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput)
     confirm_password = forms.CharField(widget=forms.PasswordInput)
     role = forms.ChoiceField(
-        choices=[("developer", "Developer"), ("manager", "Manager")],
+        choices=[("developer", "Developer"), ("manager", "Manager"), ("admin", "Admin")],
         initial="developer",
+    )
+    team = forms.ModelChoiceField(
+        queryset=Team.objects.order_by("name"),
+        required=True,
+        empty_label="Select a team",
     )
     
     class Meta:
         model = User
-        fields = ['email', 'role']
+        fields = ['email', 'role', 'team']
     
     def clean(self):
         cleaned_data = super().clean()

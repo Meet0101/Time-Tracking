@@ -3,6 +3,22 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.utils import timezone
 from datetime import timedelta
 
+class Team(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    code = models.SlugField(max_length=40, unique=True)
+    created_by = models.ForeignKey(
+        "User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="teams_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -24,6 +40,13 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     avatar = models.FileField(upload_to="avatars/", null=True, blank=True)
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="members",
+    )
 
     STATUS_CHOICES = (
         ('active', 'Active'),
@@ -58,6 +81,7 @@ class Project(models.Model):
     description = models.TextField(blank=True)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
+    team = models.ForeignKey(Team, on_delete=models.CASCADE, related_name="projects")
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_projects')
     created_at = models.DateTimeField(auto_now_add=True)
 

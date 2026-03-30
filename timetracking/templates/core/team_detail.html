@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+      <div class="text-muted small"><a href="{% url 'teams' %}" class="text-decoration-none">Teams</a> /</div>
+      <h2 class="fw-bold mb-0">{{ team.name }}</h2>
+      <div class="text-muted small">Code: <code>{{ team.code }}</code></div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-5">
+      <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-header bg-light border-0 rounded-top-4 py-3">
+          <div class="fw-bold">Edit team</div>
+        </div>
+        <div class="card-body">
+          <form method="post" class="row g-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="rename">
+            <div class="col-md-7">
+              <label class="form-label fw-semibold">Name</label>
+              <input class="form-control" name="name" value="{{ team.name }}" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Code</label>
+              <input class="form-control" name="code" value="{{ team.code }}" required>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-primary rounded-pill px-4 fw-bold">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm rounded-4 mt-4">
+        <div class="card-header bg-light border-0 rounded-top-4 py-3">
+          <div class="fw-bold">Projects in this team</div>
+        </div>
+        <div class="card-body">
+          {% for p in projects %}
+            <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+              <div>
+                <div class="fw-semibold">{{ p.name }}</div>
+                <div class="text-muted small">Created {{ p.created_at|date:"M d, Y" }}</div>
+              </div>
+              <a class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold" href="{% url 'project_detail' p.id %}">Open</a>
+            </div>
+          {% empty %}
+            <div class="text-muted">No projects yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-header bg-light border-0 rounded-top-4 py-3 d-flex justify-content-between align-items-center">
+          <div class="fw-bold">Team members</div>
+          <div class="text-muted small">Move users between teams.</div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="bg-white">
+                <tr>
+                  <th class="px-4 py-3 border-0">User</th>
+                  <th class="py-3 border-0 text-center">Role</th>
+                  <th class="py-3 border-0 text-center">Status</th>
+                  <th class="py-3 border-0 text-end px-4">Move</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in members %}
+                <tr>
+                  <td class="px-4 py-3">
+                    <div class="fw-semibold">{{ u.email }}</div>
+                    <div class="text-muted small">
+                      {% if u.is_superuser %}superadmin{% else %}{{ u.role }}{% endif %}
+                    </div>
+                  </td>
+                  <td class="py-3 text-center">
+                    <span class="badge bg-light text-dark rounded-pill">{{ u.role }}</span>
+                  </td>
+                  <td class="py-3 text-center">
+                    <span class="badge {% if u.status == 'active' %}bg-success{% else %}bg-secondary{% endif %} rounded-pill">{{ u.status }}</span>
+                  </td>
+                  <td class="py-3 text-end px-4">
+                    <form method="post" class="d-flex gap-2 justify-content-end">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="move_user">
+                      <input type="hidden" name="user_id" value="{{ u.id }}">
+                      <select class="form-select form-select-sm" name="target_team_id" style="max-width: 220px;" {% if u.is_superuser %}disabled{% endif %}>
+                        {% for t in other_teams %}
+                          <option value="{{ t.id }}">{{ t.name }}</option>
+                        {% endfor %}
+                      </select>
+                      <button class="btn btn-outline-primary btn-sm rounded-pill px-3 fw-bold" {% if u.is_superuser or not other_teams %}disabled{% endif %}>
+                        Move
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-5">No members.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
